@@ -96,6 +96,8 @@ DESIGN.md를 작성할 때:
 
 **코드를 수정해서 변경 사항이 생기면 Git으로 push하라.**
 
+원격 저장소는 https://github.com/closeonjae/ChessPuzzle.git 이며, main 브랜치에만 push한다.
+
 커밋할 때:
 
 - 변경된 파일을 확인하고 의미 있는 작업 단위로 커밋하라.
