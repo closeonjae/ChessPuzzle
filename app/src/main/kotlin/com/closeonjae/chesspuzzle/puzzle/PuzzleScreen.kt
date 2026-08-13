@@ -266,8 +266,9 @@ private const val ZOOM_SCALE = 2.2f
 
 /** Extra multiplier on top of the "physically accurate" finger-delta/ZOOM_SCALE
  * pan — user request ("감도를 더 높여줘"): the 1:1-feeling pan was too sluggish
- * for reaching far corners of the board, so panning now outruns the finger. */
-private const val ZOOM_PAN_SENSITIVITY = 3f
+ * for reaching far corners of the board, so panning now outruns the finger.
+ * Later dialed back down a step ("감도 조금 줄여줘") once 3f felt overshooty. */
+private const val ZOOM_PAN_SENSITIVITY = 2f
 
 @Composable
 private fun Board(
