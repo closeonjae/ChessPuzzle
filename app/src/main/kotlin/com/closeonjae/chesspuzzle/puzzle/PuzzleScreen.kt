@@ -38,14 +38,11 @@ import com.closeonjae.chesspuzzle.ui.theme.BoardDark
 import com.closeonjae.chesspuzzle.ui.theme.BoardLight
 import com.closeonjae.chesspuzzle.ui.theme.Dimens
 import com.closeonjae.chesspuzzle.ui.theme.ErrorColor
-import com.closeonjae.chesspuzzle.ui.theme.PieceBlackFill
-import com.closeonjae.chesspuzzle.ui.theme.PieceWhiteFill
 import com.closeonjae.chesspuzzle.ui.theme.SelectedSquare
 import com.closeonjae.chesspuzzle.ui.theme.Success
 import com.closeonjae.chesspuzzle.ui.theme.Surface
 import com.closeonjae.chesspuzzle.ui.theme.TextSecondary
 import com.github.bhlangonijr.chesslib.Piece
-import com.github.bhlangonijr.chesslib.PieceType
 import com.github.bhlangonijr.chesslib.Side
 import com.github.bhlangonijr.chesslib.Square
 import kotlinx.coroutines.delay
@@ -234,11 +231,11 @@ private fun Board(
                             .clickable(enabled = !dimmed) { onSquareTapped(square) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        val glyph = pieceGlyph(piece)
-                        if (glyph != null) {
-                            Text(
-                                text = glyph,
-                                color = if (piece.pieceSide == Side.WHITE) PieceWhiteFill else PieceBlackFill,
+                        if (piece != Piece.NONE) {
+                            PieceIcon(
+                                pieceType = piece.pieceType,
+                                isWhite = piece.pieceSide == Side.WHITE,
+                                modifier = Modifier.fillMaxSize(0.82f),
                             )
                         }
                     }
@@ -272,14 +269,4 @@ private fun squareAt(row: Int, col: Int): Square {
     val file = ('A' + col)
     val rank = 8 - row
     return Square.valueOf("$file$rank")
-}
-
-private fun pieceGlyph(piece: Piece): String? = when (piece.pieceType) {
-    PieceType.PAWN -> "♟"
-    PieceType.KNIGHT -> "♞"
-    PieceType.BISHOP -> "♝"
-    PieceType.ROOK -> "♜"
-    PieceType.QUEEN -> "♛"
-    PieceType.KING -> "♚"
-    else -> null
 }
