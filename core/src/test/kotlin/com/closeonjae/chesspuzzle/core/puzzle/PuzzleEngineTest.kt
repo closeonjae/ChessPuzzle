@@ -97,4 +97,17 @@ class PuzzleEngineTest {
         assertIs<MoveOutcome.Solved>(outcome)
         assertEquals(fenAfterSolve, engine.board.fen)
     }
+
+    @Test
+    fun `hintMove reports the next expected move without touching the board, and null once solved`() {
+        val engine = foolsMate()
+        val fenBefore = engine.board.fen
+        val hint = engine.hintMove
+        assertEquals(Square.D8, hint?.from)
+        assertEquals(Square.H4, hint?.to)
+        assertEquals(fenBefore, engine.board.fen)
+
+        engine.attemptCoordinates(Square.D8, Square.H4)
+        assertEquals(null, engine.hintMove)
+    }
 }

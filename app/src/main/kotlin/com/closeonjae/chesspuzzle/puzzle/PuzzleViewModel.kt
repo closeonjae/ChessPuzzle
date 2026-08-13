@@ -23,6 +23,8 @@ data class PuzzleUiState(
     val rating: Int? = null,
     val ratingDelta: Int? = null,
     val selectedSquare: Square? = null,
+    /** Set by a first hint-button tap: the square whose piece the solver needs to move. */
+    val hintSquare: Square? = null,
     val feedback: MoveFeedback = MoveFeedback.NONE,
     val isLoading: Boolean = true,
     val error: String? = null,
@@ -40,7 +42,13 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
 
     fun loadNextPuzzle() {
         _uiState.update {
-            it.copy(isLoading = true, error = null, selectedSquare = null, feedback = MoveFeedback.NONE)
+            it.copy(
+                isLoading = true,
+                error = null,
+                selectedSquare = null,
+                hintSquare = null,
+                feedback = MoveFeedback.NONE,
+            )
         }
         viewModelScope.launch {
             repository.nextPuzzle()
@@ -65,6 +73,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         val state = _uiState.value
         val engine = state.engine ?: return
         if (state.isLoading || engine.isSolved) return
+        if (state.hintSquare != null) _uiState.update { it.copy(hintSquare = null) }
 
         val selected = state.selectedSquare
         when {
@@ -80,7 +89,30 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         val state = _uiState.value
         val engine = state.engine ?: return
         if (state.isLoading || engine.isSolved || san.isBlank()) return
+        if (state.hintSquare != null) _uiState.update { it.copy(hintSquare = null) }
         handleOutcome(engine, engine.attemptSan(san.trim()))
+    }
+
+    /**
+     * Hint button (user request): first tap reveals which square's piece the
+     * solver needs to move (highlighted, doesn't touch the board); a second
+     * tap while that's showing plays the move for them, same as a normal
+     * correct move (opponent auto-reply / puzzle-solved handling included).
+     */
+    fun onHintTapped() {
+        val state = _uiState.value
+        val engine = state.engine ?: return
+        if (state.isLoading || engine.isSolved) return
+
+        val armed = state.hintSquare
+        if (armed == null) {
+            val from = engine.hintMove?.from ?: return
+            _uiState.update { it.copy(hintSquare = from, selectedSquare = null) }
+        } else {
+            val move = engine.hintMove ?: return
+            _uiState.update { it.copy(hintSquare = null) }
+            handleOutcome(engine, engine.attemptCoordinates(move.from, move.to))
+        }
     }
 
     private fun handleOutcome(engine: PuzzleEngine, outcome: MoveOutcome) {

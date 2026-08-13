@@ -1,6 +1,7 @@
 package com.closeonjae.chesspuzzle.puzzle
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -10,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -48,6 +49,8 @@ import com.closeonjae.chesspuzzle.ui.theme.BoardDark
 import com.closeonjae.chesspuzzle.ui.theme.BoardLight
 import com.closeonjae.chesspuzzle.ui.theme.Dimens
 import com.closeonjae.chesspuzzle.ui.theme.ErrorColor
+import com.closeonjae.chesspuzzle.ui.theme.LastMoveOutline
+import com.closeonjae.chesspuzzle.ui.theme.LegalDot
 import com.closeonjae.chesspuzzle.ui.theme.RatingDown
 import com.closeonjae.chesspuzzle.ui.theme.RatingUp
 import com.closeonjae.chesspuzzle.ui.theme.SelectedSquare
@@ -61,8 +64,10 @@ import kotlinx.coroutines.delay
 
 /**
  * The puzzle screen: an (almost) full-bleed board with the turn label above
- * it, the rating chip below it, rank numbers to its left, and a
- * keyboard-entry tab to its right — DESIGN.md 4/5절.
+ * it, the rating chip below it, a hint tab to its left, and a
+ * keyboard-entry tab to its right — DESIGN.md 4/5절. The board itself
+ * flips to the solver's own perspective when it's Black to move (own
+ * pieces always nearest the bottom of the screen), same as most chess UIs.
  *
  * Deliberately deferred for this first buildable pass (documented, not
  * silently dropped): animated last-move-square highlighting. Cosmetic only
@@ -94,27 +99,21 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 13.dp),
             )
 
-            // The row (ranks + board + keyboard tab) is wider after the board
-            // than before it (kbd tab > ranks column), so centering the row
-            // as a whole leaves the board itself off-center — and the ranks
-            // column, sitting outside the board's own corner (which is
-            // already at the circle's edge by construction), clips the round
-            // screen on the left. Shift the whole group right by half that
-            // width difference to re-center the board and pull the ranks
-            // column back inside the safe area.
-            val groupShift = (
-                Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart + Dimens.KeyboardTabWidth -
-                    Dimens.RanksColumnWidth - Dimens.BoardRowGap
-                ) / 2
-
+            // Hint tab (left) and keyboard tab (right) are now the same
+            // size with the same gap on either side of the board, so the
+            // row is symmetric and centers on the board with no extra
+            // offset needed (previously the ranks column was narrower than
+            // the keyboard tab and the whole row had to be nudged right).
             BoardRow(
                 engine = state.engine,
                 selected = state.selectedSquare,
+                hintSquare = state.hintSquare,
                 dimmed = dimmed,
                 boardSide = boardSide,
                 onSquareTapped = viewModel::onSquareTapped,
                 onKeyboardTapped = launchMoveInput,
-                modifier = Modifier.align(Alignment.Center).offset(x = groupShift),
+                onHintTapped = viewModel::onHintTapped,
+                modifier = Modifier.align(Alignment.Center),
             )
 
             RatingChip(
@@ -205,32 +204,20 @@ private fun RatingChip(rating: Int?, delta: Int?, modifier: Modifier = Modifier)
 private fun BoardRow(
     engine: PuzzleEngine?,
     selected: Square?,
+    hintSquare: Square?,
     dimmed: Boolean,
     boardSide: Dp,
     onSquareTapped: (Square) -> Unit,
     onKeyboardTapped: () -> Unit,
+    onHintTapped: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        RanksColumn(boardSide)
-        Spacer(Modifier.width(Dimens.BoardRowGap))
-        Board(engine, selected, dimmed, boardSide, onSquareTapped)
+        HintTab(boardSide, onHintTapped)
+        Spacer(Modifier.width(Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart))
+        Board(engine, selected, hintSquare, dimmed, boardSide, onSquareTapped)
         Spacer(Modifier.width(Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart))
         KeyboardTab(boardSide, onKeyboardTapped)
-    }
-}
-
-@Composable
-private fun RanksColumn(boardSide: Dp) {
-    Column(modifier = Modifier.size(width = Dimens.RanksColumnWidth, height = boardSide)) {
-        for (rank in 8 downTo 1) {
-            Box(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = rank.toString(), style = AppType.caption, color = TextSecondary)
-            }
-        }
     }
 }
 
@@ -238,21 +225,42 @@ private fun RanksColumn(boardSide: Dp) {
 private fun Board(
     engine: PuzzleEngine?,
     selected: Square?,
+    hintSquare: Square?,
     dimmed: Boolean,
     boardSide: Dp,
     onSquareTapped: (Square) -> Unit,
 ) {
+    // Flip to the solver's own perspective when it's Black to move (own
+    // pieces nearest the bottom) — user request. Only the *display*
+    // position is mirrored: which true row/col is drawn at each grid
+    // cell. isLight below stays keyed off the true (unflipped) row/col,
+    // since a square's own color never changes with viewing angle.
+    val flipped = engine?.sideToMove == Side.BLACK
+    // Legal destinations of the selected piece, keyed to whether they
+    // capture (an opponent piece is there) or not — user request: an empty
+    // legal square gets a small dot, a capturable square gets a circle
+    // inscribed in the whole square, both in the same legalDot color.
+    val legalDestinations: Map<Square, Boolean> = if (selected != null && engine != null) {
+        engine.board.legalMoves()
+            .filter { it.from == selected }
+            .associate { it.to to (engine.board.getPiece(it.to) != Piece.NONE) }
+    } else {
+        emptyMap()
+    }
     Column(
         modifier = Modifier
             .size(boardSide)
             .then(if (dimmed) Modifier.background(Background.copy(alpha = 0.65f)) else Modifier),
     ) {
-        for (row in 0 until 8) {
+        for (displayRow in 0 until 8) {
             Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                for (col in 0 until 8) {
+                for (displayCol in 0 until 8) {
+                    val row = if (flipped) 7 - displayRow else displayRow
+                    val col = if (flipped) 7 - displayCol else displayCol
                     val square = squareAt(row, col)
                     val isLight = (row + col) % 2 == 0
                     val piece = engine?.board?.getPiece(square) ?: Piece.NONE
+                    val isCapture = legalDestinations[square]
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -262,6 +270,26 @@ private fun Board(
                                     square == selected -> SelectedSquare
                                     isLight -> BoardLight
                                     else -> BoardDark
+                                },
+                            )
+                            .then(
+                                if (square == hintSquare) {
+                                    Modifier.border(Dimens.LastMoveOutlineWidth, LastMoveOutline)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .then(
+                                when (isCapture) {
+                                    true -> Modifier.drawWithContent {
+                                        drawCircle(color = LegalDot, radius = size.minDimension / 2f)
+                                        drawContent()
+                                    }
+                                    false -> Modifier.drawWithContent {
+                                        drawCircle(color = LegalDot, radius = size.minDimension * 0.15f)
+                                        drawContent()
+                                    }
+                                    null -> Modifier
                                 },
                             )
                             .clickable(enabled = !dimmed) { onSquareTapped(square) },
@@ -293,6 +321,28 @@ private fun KeyboardTab(boardSide: Dp, onTapped: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(text = "⌨", style = AppType.caption, color = Accent)
+    }
+}
+
+/**
+ * Same size/style as [KeyboardTab] (user request: "동일한 양식") — mirrored to
+ * sit on the board's *left*, so its curve faces the screen's left edge
+ * instead of the right. A first tap reveals which square's piece the
+ * solver needs to move ([hintSquare] outline in [Board]); a second tap
+ * while that's showing plays the move.
+ */
+@Composable
+private fun HintTab(boardSide: Dp, onTapped: () -> Unit) {
+    val tabHeight = boardSide * Dimens.KeyboardTabHeightRatio
+    Box(
+        modifier = Modifier
+            .size(width = Dimens.KeyboardTabWidth, height = tabHeight)
+            .clip(HintTabShape)
+            .background(Surface)
+            .clickable(onClick = onTapped),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = "💡", style = AppType.caption, color = Accent)
     }
 }
 
@@ -347,6 +397,50 @@ private object HalfMoonShape : Shape {
                 rect = Rect(left = 0f, top = 0f, right = 2 * leftCornerRadius, bottom = 2 * leftCornerRadius),
                 startAngleDegrees = 180f,
                 sweepAngleDegrees = 90f,
+                forceMoveTo = false,
+            )
+            close()
+        }
+        return Outline.Generic(path)
+    }
+}
+
+/**
+ * The exact horizontal mirror of [HalfMoonShape] — small corners on the
+ * right (flush against the board), the big curve on the left (facing the
+ * screen's edge). Every coordinate is [HalfMoonShape]'s own reflected
+ * across x → w−x; each `arcTo`'s start angle and rect follow the same
+ * reflection, and its sweep is negated (mirroring reverses the arc's
+ * winding direction) — verified by hand that each segment's start/end
+ * point lands exactly on the previous/next segment's, same as the
+ * original.
+ */
+private object HintTabShape : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val w = size.width
+        val h = size.height
+        val cornerRadius = (density.density * 3f).coerceAtMost(minOf(w, h) / 2f)
+        val bigRx = (w - cornerRadius).coerceAtLeast(0f)
+        val path = Path().apply {
+            moveTo(w - cornerRadius, 0f)
+            arcTo(
+                rect = Rect(left = 0f, top = 0f, right = 2 * bigRx, bottom = h),
+                startAngleDegrees = -90f,
+                sweepAngleDegrees = -180f,
+                forceMoveTo = false,
+            )
+            lineTo(w - cornerRadius, h)
+            arcTo(
+                rect = Rect(left = w - 2 * cornerRadius, top = h - 2 * cornerRadius, right = w, bottom = h),
+                startAngleDegrees = 90f,
+                sweepAngleDegrees = -90f,
+                forceMoveTo = false,
+            )
+            lineTo(w, cornerRadius)
+            arcTo(
+                rect = Rect(left = w - 2 * cornerRadius, top = 0f, right = w, bottom = 2 * cornerRadius),
+                startAngleDegrees = 0f,
+                sweepAngleDegrees = -90f,
                 forceMoveTo = false,
             )
             close()

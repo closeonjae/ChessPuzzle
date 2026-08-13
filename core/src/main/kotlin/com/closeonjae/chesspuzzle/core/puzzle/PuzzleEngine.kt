@@ -66,6 +66,9 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
 
     val sideToMove: Side get() = board.sideToMove
 
+    /** The solver's next expected move, for the hint button (DESIGN.md 5절) — doesn't touch the board. */
+    val hintMove: Move? get() = if (isSolved) null else Move(puzzle.solution[solutionIndex], board.sideToMove)
+
     /** Attempt the solver's move given as SAN (e.g. "Nc3") — the keyboard-entry flow (DESIGN.md 5절). */
     fun attemptSan(san: String): MoveOutcome = attempt { board.doMove(san) }
 

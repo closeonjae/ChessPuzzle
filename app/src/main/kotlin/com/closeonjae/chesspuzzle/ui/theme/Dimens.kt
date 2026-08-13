@@ -6,11 +6,11 @@ import androidx.compose.ui.unit.dp
 object Dimens {
     /** Board side, as a fraction of screen diameter. The pure "inscribed square"
      * value (1/sqrt(2) ≈ 0.7071) touches the circle with nothing else — the
-     * ranks column sits *outside* the board's own left edge, so at this ratio
+     * hint tab sits *outside* the board's own left edge, so at this ratio
      * it has nowhere left to go without leaving the round safe area (confirmed
-     * on an emulator screenshot: the rank 8/1 digits are partly clipped).
+     * on an emulator screenshot: the side tabs are partly clipped).
      * Chosen anyway, per explicit instruction, to maximize the board itself —
-     * the clipped ranks column is a known, accepted tradeoff. */
+     * the clipped side tabs are a known, accepted tradeoff. */
     const val BoardInsetRatio = 0.707f
 
     val ButtonHeight = 52.dp
@@ -20,7 +20,6 @@ object Dimens {
     val ChipPaddingH = 10.dp
     val ChipPaddingV = 3.dp
 
-    val RanksColumnWidth = 13.dp
     val BoardRowGap = 3.dp
     val KeyboardTabWidth = 17.dp
     val KeyboardTabMarginStart = 4.dp

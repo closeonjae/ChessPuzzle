@@ -25,6 +25,13 @@ val RatingDown = Color(0xFF4FA8FF)
 // fill/outline tokens here anymore — DESIGN.md 2절.
 val BoardLight = Color(0xFFEDF3FA)
 val BoardDark = Color(0xFF5A99F2)
-val SelectedSquare = Color(0x73C15F3C) // rgba(193,95,60,0.45)
-val LegalDot = Color(0x8CF5F1EA) // rgba(245,241,234,0.55)
+// Selected square: solid RGB average of boardLight/boardDark (user
+// request) — a neutral tone distinct from both square colors, rather than
+// a translucent accent tint over whichever color the square already was.
+val SelectedSquare = Color(
+    red = (BoardLight.red + BoardDark.red) / 2f,
+    green = (BoardLight.green + BoardDark.green) / 2f,
+    blue = (BoardLight.blue + BoardDark.blue) / 2f,
+)
+val LegalDot = Color(0x40000000) // rgba(0,0,0,0.25) — legal-move dot/capture-ring
 val LastMoveOutline = Color(0xE6C15F3C) // rgba(193,95,60,0.9)
