@@ -151,19 +151,17 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             // Centered retry button (user request) — the top "Connection
             // Lost" text used to double as the only retry affordance; a
             // real button in the middle of the screen is a much more
-            // obvious target than small text at the very top edge. Sized
-            // explicitly to DESIGN.md's button spec (same values
-            // LoginScreen's button uses) — same format, per user request.
+            // obvious target than small text at the very top edge. Same
+            // height/corner radius as LoginScreen's button (DESIGN.md
+            // spec), but sized to fit its own short "Retry" label instead
+            // of that button's 70%-of-screen width (user request).
             if (state.error != null) {
                 Button(
                     onClick = viewModel::loadNextPuzzle,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .fillMaxWidth(0.7f)
-                        .height(Dimens.ButtonHeight),
+                    modifier = Modifier.align(Alignment.Center).height(Dimens.ButtonHeight),
                     shape = RoundedCornerShape(Dimens.ButtonCornerRadius),
                 ) {
-                    Text(text = "Retry", style = AppType.buttonLabel)
+                    Text(text = "Retry", style = AppType.buttonLabel, textAlign = TextAlign.Center)
                 }
             }
         }

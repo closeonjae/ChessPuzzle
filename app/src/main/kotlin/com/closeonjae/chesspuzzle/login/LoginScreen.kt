@@ -57,7 +57,12 @@ fun LoginScreen(viewModel: LoginViewModel) {
                     modifier = Modifier.fillMaxWidth(0.7f).height(Dimens.ButtonHeight),
                     shape = RoundedCornerShape(Dimens.ButtonCornerRadius),
                 ) {
-                    Text(text = "Sign in with Lichess", style = AppType.buttonLabel)
+                    Text(
+                        text = "Sign in with Lichess",
+                        style = AppType.buttonLabel,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
                 if (state.error != null) {
                     Text(
