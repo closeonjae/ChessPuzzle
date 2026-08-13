@@ -40,17 +40,23 @@ sealed interface MoveOutcome {
 
 /**
  * Drives one Lichess puzzle on top of chesslib (bhlangonijr/chesslib —
- * RESEARCH.md 8절). `puzzle.solution` alternates opponent / solver moves
- * starting with the OPPONENT at index 0 — confirmed against Lichess's own
- * puzzle database docs (database.lichess.org/#puzzles): "FEN is the
- * position before the opponent makes their move [...] the second move is
- * the beginning of the solution." `game.pgn` + `initialPly` is the FEN
- * equivalent here, so `solution[0]` is that opponent move, auto-played
- * immediately below; the solver's own moves begin at `solution[1]`.
- * (An earlier version of this comment claimed the opposite — solver at
- * index 0 — based on a misreading of lila's web client internals; a real
- * on-device bug report caught it: the hint button was pointing at the
- * opponent's own piece.)
+ * RESEARCH.md 8절). `puzzle.solution` alternates solver / opponent moves
+ * starting with the SOLVER at index 0 — the position at `initialPly` is
+ * already the solver's turn, nothing is auto-played on load.
+ *
+ * (This exact assumption was flipped once already and had to be reverted —
+ * DESIGN.md 5절 "힌트" 항목의 버그 수정 기록 참고. A real-device screenshot showed
+ * the hint button pointing at the opponent's own piece, which looked
+ * exactly like Lichess's puzzle *database* convention where solution[0] is
+ * an opponent setup move (database.lichess.org/#puzzles). Auto-playing
+ * solution[0] to match that "fixed" the hint but broke real puzzle loading
+ * almost entirely — most fetches started failing right after construction,
+ * surfacing as constant "Connection Lost". Whatever the real explanation
+ * is (this REST API's game.pgn+initialPly+solution shape apparently
+ * doesn't follow the CSV database export's convention, or something else
+ * was off), it's reverted here pending an actual raw API response to
+ * confirm against, rather than guessing a second time and risking another
+ * regression.)
  */
 class PuzzleEngine(private val puzzle: PuzzleData) {
 
@@ -64,14 +70,11 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
     init {
         // game.pgn is space-separated SAN tokens with no move numbers
         // (RESEARCH.md 3절 example response) — replay up to initialPly to
-        // reach the position right before the opponent's setup move.
+        // reach the puzzle's starting position.
         val sanMoves = puzzle.gamePgn.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
         for (i in 0 until puzzle.initialPly.coerceAtMost(sanMoves.size)) {
             check(board.doMove(sanMoves[i])) { "Failed to replay '${sanMoves[i]}' at ply $i for puzzle ${puzzle.id}" }
         }
-        // Auto-play the opponent's setup move (solution[0]) so the position
-        // actually handed to the solver is the one right after it.
-        playOpponentReplyIfAny()
     }
 
     val sideToMove: Side get() = board.sideToMove

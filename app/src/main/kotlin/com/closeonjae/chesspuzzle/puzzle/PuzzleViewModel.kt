@@ -1,5 +1,6 @@
 package com.closeonjae.chesspuzzle.puzzle
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.closeonjae.chesspuzzle.core.puzzle.MoveOutcome
@@ -59,7 +60,17 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 // whole app (real-device report: a few Retry taps after
                 // "Connection Lost" eventually force-closed the app), routing
                 // it into the same error state as any other fetch failure.
-                .mapCatching { PuzzleEngine(it.toPuzzleData()) to it.puzzle.rating }
+                // Logged here (before construction can throw) so a future
+                // real-puzzle failure can be diagnosed from `adb logcat`
+                // instead of guessed at (DESIGN.md 5절 힌트 버그 기록).
+                .mapCatching {
+                    Log.d(
+                        "PuzzleViewModel",
+                        "puzzle=${it.puzzle.id} initialPly=${it.puzzle.initialPly} " +
+                            "gamePgn=\"${it.game.pgn}\" solution=${it.puzzle.solution}",
+                    )
+                    PuzzleEngine(it.toPuzzleData()) to it.puzzle.rating
+                }
                 .onSuccess { (engine, rating) ->
                     _uiState.update {
                         it.copy(engine = engine, rating = rating, ratingDelta = null, isLoading = false)
