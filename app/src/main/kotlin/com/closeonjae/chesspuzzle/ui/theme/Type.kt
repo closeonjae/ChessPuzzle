@@ -14,7 +14,7 @@ object AppType {
     // and colliding with the board — corrected down after seeing the actual
     // render, not just the illustrative HTML mockup's proportions.
     val turnLabel = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-    val ratingChip = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal)
+    val ratingChip = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Normal)
     val buttonLabel = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium)
     val caption = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Normal)
 }

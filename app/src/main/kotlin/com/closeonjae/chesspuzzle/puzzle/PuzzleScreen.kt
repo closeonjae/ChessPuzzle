@@ -28,7 +28,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -45,6 +48,8 @@ import com.closeonjae.chesspuzzle.ui.theme.BoardDark
 import com.closeonjae.chesspuzzle.ui.theme.BoardLight
 import com.closeonjae.chesspuzzle.ui.theme.Dimens
 import com.closeonjae.chesspuzzle.ui.theme.ErrorColor
+import com.closeonjae.chesspuzzle.ui.theme.RatingDown
+import com.closeonjae.chesspuzzle.ui.theme.RatingUp
 import com.closeonjae.chesspuzzle.ui.theme.SelectedSquare
 import com.closeonjae.chesspuzzle.ui.theme.Success
 import com.closeonjae.chesspuzzle.ui.theme.Surface
@@ -115,7 +120,7 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             RatingChip(
                 rating = state.rating,
                 delta = state.ratingDelta,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 9.dp),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 11.dp),
             )
 
             if (state.isLoading) {
@@ -173,11 +178,22 @@ private fun TurnLabel(state: PuzzleUiState, onRetry: () -> Unit, modifier: Modif
 @Composable
 private fun RatingChip(rating: Int?, delta: Int?, modifier: Modifier = Modifier) {
     if (rating == null) return
-    val text = if (delta != null) "$rating (${if (delta >= 0) "+" else ""}$delta)" else "$rating"
+    // No parens around the delta; only the delta digits get the up/down
+    // color (Korean market convention: red = up, blue = down) — the rating
+    // number itself stays textSecondary.
+    val text = buildAnnotatedString {
+        append(rating.toString())
+        if (delta != null) {
+            append(" ")
+            withStyle(SpanStyle(color = if (delta >= 0) RatingUp else RatingDown)) {
+                append(if (delta >= 0) "+$delta" else "$delta")
+            }
+        }
+    }
     Text(
         text = text,
         style = AppType.ratingChip,
-        color = if (delta != null && delta >= 0) Success else TextSecondary,
+        color = TextSecondary,
         modifier = modifier
             .clip(RoundedCornerShape(Dimens.ChipCornerRadius))
             .background(Surface)
@@ -276,37 +292,45 @@ private fun KeyboardTab(boardSide: Dp, onTapped: () -> Unit) {
             .clickable(onClick = onTapped),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = "⌨", color = Accent)
+        Text(text = "⌨", style = AppType.caption, color = Accent)
     }
 }
 
 /**
- * Flat straight edge on the left (flush against the board), fully curved
- * on the right — an elliptical cap (rx = half the shape's own width,
- * ry = half its height), not a circular one.
+ * Small rounded corners on the left (flush against the board), a much
+ * bigger elliptical curve on the right — matching the design mockup's
+ * `.kbd-tab` CSS exactly (DESIGN.md 산출물 HTML): `border-radius: 3px 19px
+ * 19px 3px / 3px 46px 46px 3px` on a 22×92 box. The two right corners'
+ * radii (19 horizontal, 46 vertical) aren't independent of the left ones —
+ * 3+19 = 22 (the box's own width) and 46+46 = 92 (its own height), so the
+ * curve starts the instant the small left corner ends, with zero flat run
+ * left over anywhere on the outline.
  *
  * `RoundedCornerShape` can't produce this: each of its corners takes a
  * single circular radius, clamped to fit within *both* adjacent edges — on
- * a tall, narrow box like this one (22dp wide, well over 100dp tall) that
- * clamp caps the radius at roughly half the *width* regardless of what's
- * requested, leaving a long straight run in the middle of the right edge
- * (confirmed on an emulator screenshot, not just reasoned about). A custom
- * outline tracing an explicit half-ellipse is the only way to span the
- * full height with no straight segment left.
+ * a tall, narrow box like this one that clamp caps the radius at roughly
+ * half the *width* regardless of what's requested, leaving a long straight
+ * run in the middle of the right edge (confirmed on an emulator
+ * screenshot, not just reasoned about). A custom outline tracing an
+ * explicit ellipse is the only way to reproduce the CSS shape.
  */
 private object HalfMoonShape : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val w = size.width
         val h = size.height
         val leftCornerRadius = (density.density * 3f).coerceAtMost(minOf(w, h) / 2f)
+        // Right-side ellipse: rx = w - leftCornerRadius (reaches the full
+        // right edge, same as the CSS corner radii summing to the box
+        // width), ry = h/2 so its top and bottom quarters meet exactly at
+        // the vertical midpoint.
+        val rightRx = (w - leftCornerRadius).coerceAtLeast(0f)
         val path = Path().apply {
             moveTo(leftCornerRadius, 0f)
-            lineTo(w / 2f, 0f)
-            // Half-ellipse inscribed in the full w×h box: rx = w/2, ry = h/2 —
-            // traced top-center → rightmost point → bottom-center, i.e. the
-            // entire right half of the shape becomes one continuous curve.
+            // Traced top-center → rightmost point → bottom-center as one
+            // continuous curve, starting exactly where the moveTo left off
+            // (no straight segment in between).
             arcTo(
-                rect = Rect(left = 0f, top = 0f, right = w, bottom = h),
+                rect = Rect(left = w - 2 * rightRx, top = 0f, right = w, bottom = h),
                 startAngleDegrees = -90f,
                 sweepAngleDegrees = 180f,
                 forceMoveTo = false,

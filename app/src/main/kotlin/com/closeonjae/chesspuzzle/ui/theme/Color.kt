@@ -14,15 +14,17 @@ val TextSecondary = Color(0xFFA69C8D)
 val Accent = Color(0xFFC15F3C)
 val Success = Color(0xFF4C9A6A)
 val ErrorColor = Color(0xFFD14343)
+// Rating delta — Korean market convention (red = up, blue = down), brighter
+// than errorColor/accent so the small chip text still reads clearly.
+val RatingUp = Color(0xFFFF5C5C)
+val RatingDown = Color(0xFF4FA8FF)
 
-// Chessboard — cool blue board + rounded icon-style pieces, matched to a
-// reference image the user shared (own artwork inspired by it, not a trace —
-// see DESIGN.md 2절 licensing note).
-val BoardLight = Color(0xFFDCE7F0)
-val BoardDark = Color(0xFF7FA6C6)
-val PieceWhiteFill = Color(0xFFFFFFFF)
-val PieceOutline = Color(0xFF22364A)
-val PieceBlackFill = Color(0xFF1E2A36)
+// Chessboard — square colors sampled directly from the user-provided LS/DS
+// reference PNGs; piece artwork is cut from those same images (see
+// PieceIcons.kt) rather than drawn in code, so there are no separate piece
+// fill/outline tokens here anymore — DESIGN.md 2절.
+val BoardLight = Color(0xFFEDF3FA)
+val BoardDark = Color(0xFF5A99F2)
 val SelectedSquare = Color(0x73C15F3C) // rgba(193,95,60,0.45)
 val LegalDot = Color(0x8CF5F1EA) // rgba(245,241,234,0.55)
 val LastMoveOutline = Color(0xE6C15F3C) // rgba(193,95,60,0.9)
