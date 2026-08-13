@@ -52,14 +52,17 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         }
         viewModelScope.launch {
             repository.nextPuzzle()
-                .onSuccess { puzzleAndGame ->
+                // PuzzleEngine's init replays/validates the puzzle's own PGN
+                // and solution moves and throws on anything unexpected there
+                // (RESEARCH.md 8절) — mapCatching keeps a malformed puzzle
+                // from that being an *uncaught* exception that crashes the
+                // whole app (real-device report: a few Retry taps after
+                // "Connection Lost" eventually force-closed the app), routing
+                // it into the same error state as any other fetch failure.
+                .mapCatching { PuzzleEngine(it.toPuzzleData()) to it.puzzle.rating }
+                .onSuccess { (engine, rating) ->
                     _uiState.update {
-                        it.copy(
-                            engine = PuzzleEngine(puzzleAndGame.toPuzzleData()),
-                            rating = puzzleAndGame.puzzle.rating,
-                            ratingDelta = null,
-                            isLoading = false,
-                        )
+                        it.copy(engine = engine, rating = rating, ratingDelta = null, isLoading = false)
                     }
                 }
                 .onFailure { e ->
