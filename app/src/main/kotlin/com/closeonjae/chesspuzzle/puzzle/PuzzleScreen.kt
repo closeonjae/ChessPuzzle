@@ -56,8 +56,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Text
 import com.closeonjae.chesspuzzle.R
 import com.closeonjae.chesspuzzle.core.puzzle.PuzzleEngine
@@ -150,13 +150,15 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             // Centered retry button (user request) — the top "Connection
             // Lost" text used to double as the only retry affordance; a
             // real button in the middle of the screen is a much more
-            // obvious target than small text at the very top edge. Same
-            // corner radius as LoginScreen's button (DESIGN.md spec), but
-            // sized to fit its own short "Retry" label on both axes
-            // (neither the 70%-of-screen width nor the fixed height) —
-            // user request.
+            // obvious target than small text at the very top edge. Wear
+            // Compose Material3's regular Button enforces its own minimum
+            // height regardless of an explicit smaller Modifier.height, so
+            // "shorter still" (user request, twice) needed the dedicated
+            // CompactButton variant instead — its own default height/
+            // padding are built to be shorter, rather than fighting the
+            // standard Button's floor.
             if (state.error != null) {
-                Button(
+                CompactButton(
                     onClick = viewModel::loadNextPuzzle,
                     modifier = Modifier.align(Alignment.Center),
                     shape = RoundedCornerShape(Dimens.ButtonCornerRadius),

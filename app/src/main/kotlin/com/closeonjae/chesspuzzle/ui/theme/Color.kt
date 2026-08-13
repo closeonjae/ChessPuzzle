@@ -37,6 +37,6 @@ val LegalDot = Color(0x40000000) // rgba(0,0,0,0.25) — legal-move dot/capture-
 val LastMoveOutline = Color(0xE6C15F3C) // rgba(193,95,60,0.9)
 // Hint square wash (user request) — translucent yellow (originally red at
 // 50% alpha, changed on user feedback) sitting between the square's own
-// background and the piece drawn on top of it. Alpha later lowered from
-// 50% to 25%, also on user feedback.
-val HintTint = Color(0x40FFFF00) // rgba(255,255,0,0.25)
+// background and the piece drawn on top of it. Alpha: 50% -> 25% -> 37.5%,
+// each a separate user request.
+val HintTint = Color(0x60FFFF00) // rgba(255,255,0,0.375)
