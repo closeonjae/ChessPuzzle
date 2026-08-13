@@ -486,18 +486,6 @@ private fun Board(
             }
         }
 
-        // Center reticle while zoomed — marks exactly which point release
-        // will act on (the focus, always re-centered by the graphicsLayer
-        // translation above), since that's no longer literally "under the
-        // finger" once magnified.
-        if (zoomFocusPx != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(with(density) { (cellSizePx * ZOOM_SCALE).toDp() })
-                    .border(Dimens.LastMoveOutlineWidth, Accent, RoundedCornerShape(4.dp)),
-            )
-        }
     }
 }
 
