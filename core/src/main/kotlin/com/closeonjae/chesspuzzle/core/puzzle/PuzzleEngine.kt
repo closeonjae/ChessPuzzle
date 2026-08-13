@@ -40,10 +40,17 @@ sealed interface MoveOutcome {
 
 /**
  * Drives one Lichess puzzle on top of chesslib (bhlangonijr/chesslib —
- * RESEARCH.md 8절). `puzzle.solution` alternates solver / opponent moves
- * starting with the SOLVER at index 0 (verified against lichess-org/lila's
- * ui/puzzle/src/ctrl.ts + moveTest.ts — the training UI does not auto-play
- * an opening move, the position at `initialPly` is already the solver's turn).
+ * RESEARCH.md 8절). `puzzle.solution` alternates opponent / solver moves
+ * starting with the OPPONENT at index 0 — confirmed against Lichess's own
+ * puzzle database docs (database.lichess.org/#puzzles): "FEN is the
+ * position before the opponent makes their move [...] the second move is
+ * the beginning of the solution." `game.pgn` + `initialPly` is the FEN
+ * equivalent here, so `solution[0]` is that opponent move, auto-played
+ * immediately below; the solver's own moves begin at `solution[1]`.
+ * (An earlier version of this comment claimed the opposite — solver at
+ * index 0 — based on a misreading of lila's web client internals; a real
+ * on-device bug report caught it: the hint button was pointing at the
+ * opponent's own piece.)
  */
 class PuzzleEngine(private val puzzle: PuzzleData) {
 
@@ -57,11 +64,14 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
     init {
         // game.pgn is space-separated SAN tokens with no move numbers
         // (RESEARCH.md 3절 example response) — replay up to initialPly to
-        // reach the puzzle's starting position.
+        // reach the position right before the opponent's setup move.
         val sanMoves = puzzle.gamePgn.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
         for (i in 0 until puzzle.initialPly.coerceAtMost(sanMoves.size)) {
             check(board.doMove(sanMoves[i])) { "Failed to replay '${sanMoves[i]}' at ply $i for puzzle ${puzzle.id}" }
         }
+        // Auto-play the opponent's setup move (solution[0]) so the position
+        // actually handed to the solver is the one right after it.
+        playOpponentReplyIfAny()
     }
 
     val sideToMove: Side get() = board.sideToMove
