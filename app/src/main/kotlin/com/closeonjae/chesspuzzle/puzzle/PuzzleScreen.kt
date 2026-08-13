@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.CircularProgressIndicator
@@ -140,7 +141,15 @@ private fun TurnLabel(state: PuzzleUiState, onRetry: () -> Unit, modifier: Modif
         style = AppType.turnLabel,
         color = color,
         textAlign = TextAlign.Center,
-        modifier = modifier.then(if (clickable) Modifier.clickable(onClick = onRetry) else Modifier),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        // Bounded to a fraction of the screen width — near the top of a round
+        // display the safe chord is much narrower than the full screen width,
+        // and an unconstrained Text overflowed into/over the board (caught by
+        // an emulator screenshot, not visible from source alone).
+        modifier = modifier
+            .fillMaxWidth(0.78f)
+            .then(if (clickable) Modifier.clickable(onClick = onRetry) else Modifier),
     )
 }
 

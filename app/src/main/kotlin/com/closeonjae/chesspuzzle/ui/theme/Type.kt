@@ -9,7 +9,11 @@ import androidx.compose.ui.unit.sp
 // these are used directly as `style =` rather than threaded through a
 // MaterialTheme.Typography role system we would not otherwise need.
 object AppType {
-    val turnLabel = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+    // DESIGN.md originally specified 20sp here; a real-device (emulator)
+    // screenshot showed that overflowing the round screen's narrow top arc
+    // and colliding with the board — corrected down after seeing the actual
+    // render, not just the illustrative HTML mockup's proportions.
+    val turnLabel = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     val ratingChip = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal)
     val buttonLabel = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium)
     val caption = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Normal)

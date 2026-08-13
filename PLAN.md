@@ -99,8 +99,11 @@ RESEARCH.md의 조사 결과를 바탕으로 확정한 구현 계획. (로그인
 - [x] DESIGN.md 작성 (색/타이포/간격/컴포넌트, 빈·로딩·에러 상태, 접근성)
 - [x] `LoginScreen` Compose 구현
 - [x] `PuzzleScreen` Compose 구현(체스판 렌더링 + 탭 입력) — `./gradlew :app:assembleDebug` 성공, 로컬 Android SDK/Gradle로 실제 컴파일 검증
-- [ ] 실기기(워치8) 사이드로드 후 로그인 흐름 검증 — **이 환경엔 실제 워치가 없어 미수행**. 특히 `RemoteAuthClient`의 에러 코드 체계는 문서화되어 있지 않아(RESEARCH.md 4절) 실기기에서만 확인 가능.
-- [ ] 실기기 퍼즐 풀이 전체 루프 검증(정답/오답/레이팅 갱신)
+- [x] **Wear OS 에뮬레이터 검증** (Wear OS 6 / API 36, `wearos_large_round`, 로컬에 새로 구성) — 실제로 설치·실행해 스크린샷/`adb input tap`으로 확인:
+  - 로그인 화면 렌더링 확인, "Sign in with Lichess" 탭 → 페어링된 폰이 없어 `RemoteAuthClient`가 실패 → "Sign-in failed. Tap to retry." 에러 상태가 의도대로 표시됨을 확인(정상 동작 — 이 실패 자체가 예상된 제약, RESEARCH.md 4절).
+  - 디버그 전용 `DebugPuzzlePreviewActivity`(로그인 없이 캔 데이터로 퍼즐 화면을 미리보기 위한 debug 소스셋 전용 진입점, release에는 포함 안 됨)로 퍼즐 화면 전체 루프를 검증: 탭-선택→이동, 오답("Try again" 빨간색), 정답 연속 진행(상대 응수 자동 재생), 마지막 수 완료 시 "Correct" + 레이팅 칩 갱신(`1646 (+14)`)까지 전부 스크린샷으로 확인됨.
+  - **실기기 스크린샷으로 실제 버그 1건 발견 후 수정**: 상단 턴 텍스트가 초안 20sp로는 원형 화면 상단 안전 영역을 넘어 보드와 겹침 → 13sp + 폭 78% 제한 + 말줄임으로 수정(DESIGN.md 3절에 기록).
+- [ ] **실물 워치 8 사이드로드 검증** — 에뮬레이터로 대부분 검증했지만, 진짜 페어링된 폰을 통한 `RemoteAuthClient` 로그인 완주(에뮬레이터는 페어링 폰이 없어 이 부분만은 재현 불가)와 실제 Lichess 계정으로 배치 API 호출까지는 실물 기기 필요.
 - [x] Git 커밋 + main 브랜치 push
 
 ### 구현 중 확정된 사항 (계획 대비 변경/구체화)

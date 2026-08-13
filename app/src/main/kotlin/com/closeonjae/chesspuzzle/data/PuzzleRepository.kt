@@ -16,18 +16,21 @@ private const val ANGLE = "mix"
  * (RESEARCH.md 6절 — the only pair that actually updates the solver's
  * puzzle rating server-side, unlike /api/puzzle/next).
  */
-class PuzzleRepository(
+// open: the debug build variant substitutes a canned in-memory subclass
+// for DebugPuzzlePreviewActivity (app/src/debug), to screen-check
+// PuzzleScreen without a completed Lichess sign-in.
+open class PuzzleRepository(
     private val api: LichessApiClient,
     private val tokenStore: TokenStore,
 ) {
-    suspend fun nextPuzzle(): Result<PuzzleAndGame> = runCatching {
+    open suspend fun nextPuzzle(): Result<PuzzleAndGame> = runCatching {
         val token = requireToken()
         withContext(Dispatchers.IO) {
             api.fetchPuzzleBatch(token, angle = ANGLE, count = 1).puzzles.first()
         }
     }
 
-    suspend fun reportSolved(puzzleId: String, win: Boolean): Result<PuzzleBatchSolveResponse> = runCatching {
+    open suspend fun reportSolved(puzzleId: String, win: Boolean): Result<PuzzleBatchSolveResponse> = runCatching {
         val token = requireToken()
         withContext(Dispatchers.IO) {
             api.solvePuzzleBatch(
