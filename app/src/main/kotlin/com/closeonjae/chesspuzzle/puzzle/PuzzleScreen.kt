@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Text
 import com.closeonjae.chesspuzzle.R
@@ -116,7 +118,6 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
 
             TurnLabel(
                 state = state,
-                onRetry = viewModel::loadNextPuzzle,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 13.dp),
             )
 
@@ -146,36 +147,45 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             if (state.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
+
+            // Centered retry button (user request) — the top "Connection
+            // Lost" text used to double as the only retry affordance; a
+            // real button in the middle of the screen is a much more
+            // obvious target than small text at the very top edge.
+            if (state.error != null) {
+                Button(onClick = viewModel::loadNextPuzzle, modifier = Modifier.align(Alignment.Center)) {
+                    Text(text = "Retry", style = AppType.buttonLabel)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun TurnLabel(state: PuzzleUiState, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+private fun TurnLabel(state: PuzzleUiState, modifier: Modifier = Modifier) {
     val text: String
     val color: Color
-    val clickable: Boolean
     when {
         state.error != null -> {
-            text = "Connection Lost"; color = ErrorColor; clickable = true
+            text = "Connection Lost"; color = ErrorColor
         }
         state.isLoading -> {
-            text = "Loading…"; color = TextSecondary; clickable = false
+            text = "Loading…"; color = TextSecondary
         }
         state.feedback == MoveFeedback.WRONG -> {
-            text = "Try again"; color = ErrorColor; clickable = false
+            text = "Try again"; color = ErrorColor
         }
         state.feedback == MoveFeedback.SOLVED -> {
-            text = "Correct"; color = Success; clickable = false
+            text = "Correct"; color = Success
         }
         state.engine?.sideToMove == Side.WHITE -> {
-            text = "White to move"; color = TextSecondary; clickable = false
+            text = "White to move"; color = TextSecondary
         }
         state.engine?.sideToMove == Side.BLACK -> {
-            text = "Black to move"; color = TextSecondary; clickable = false
+            text = "Black to move"; color = TextSecondary
         }
         else -> {
-            text = ""; color = TextSecondary; clickable = false
+            text = ""; color = TextSecondary
         }
     }
     Text(
@@ -189,9 +199,7 @@ private fun TurnLabel(state: PuzzleUiState, onRetry: () -> Unit, modifier: Modif
         // display the safe chord is much narrower than the full screen width,
         // and an unconstrained Text overflowed into/over the board (caught by
         // an emulator screenshot, not visible from source alone).
-        modifier = modifier
-            .fillMaxWidth(0.78f)
-            .then(if (clickable) Modifier.clickable(onClick = onRetry) else Modifier),
+        modifier = modifier.fillMaxWidth(0.78f),
     )
 }
 
@@ -247,6 +255,11 @@ private fun BoardRow(
  * useful context around the target. */
 private const val ZOOM_SCALE = 2.2f
 
+/** Extra multiplier on top of the "physically accurate" finger-delta/ZOOM_SCALE
+ * pan — user request ("감도를 더 높여줘"): the 1:1-feeling pan was too sluggish
+ * for reaching far corners of the board, so panning now outruns the finger. */
+private const val ZOOM_PAN_SENSITIVITY = 3f
+
 @Composable
 private fun Board(
     engine: PuzzleEngine?,
@@ -262,13 +275,19 @@ private fun Board(
     // cell. isLight below stays keyed off the true (unflipped) row/col,
     // since a square's own color never changes with viewing angle.
     val flipped = engine?.sideToMove == Side.BLACK
-    // Legal destinations of the selected piece, keyed to whether they
-    // capture (an opponent piece is there) or not — user request: an empty
-    // legal square gets a small dot, a capturable square gets a circle
+    // The hinted square (user request: make it unmistakable which piece to
+    // move) gets the exact same treatment as a real selection — filled
+    // background + legal-move dots, not just a thin outline — plus the
+    // accent border on top of that, kept below, as an extra "this is a
+    // hint, not something you tapped yourself" cue.
+    val highlighted = selected ?: hintSquare
+    // Legal destinations of the selected/hinted piece, keyed to whether
+    // they capture (an opponent piece is there) or not — user request: an
+    // empty legal square gets a small dot, a capturable square gets a ring
     // inscribed in the whole square, both in the same legalDot color.
-    val legalDestinations: Map<Square, Boolean> = if (selected != null && engine != null) {
+    val legalDestinations: Map<Square, Boolean> = if (highlighted != null && engine != null) {
         engine.board.legalMoves()
-            .filter { it.from == selected }
+            .filter { it.from == highlighted }
             .associate { it.to to (engine.board.getPiece(it.to) != Piece.NONE) }
     } else {
         emptyMap()
@@ -393,7 +412,7 @@ private fun Board(
                                                 onSquareTapped(squareFromOffset(focus))
                                                 break
                                             }
-                                            focus += (change.position - lastPos) / ZOOM_SCALE
+                                            focus += (change.position - lastPos) * ZOOM_PAN_SENSITIVITY / ZOOM_SCALE
                                             focus = Offset(
                                                 focus.x.coerceIn(0f, boardSidePx),
                                                 focus.y.coerceIn(0f, boardSidePx),
@@ -424,7 +443,7 @@ private fun Board(
                                 .weight(1f)
                                 .background(
                                     when {
-                                        square == selected -> SelectedSquare
+                                        square == selected || square == hintSquare -> SelectedSquare
                                         isLight -> BoardLight
                                         else -> BoardDark
                                     },
@@ -438,8 +457,17 @@ private fun Board(
                                 )
                                 .then(
                                     when (isCapture) {
+                                        // Hollow ring inscribed in the square, stroke width
+                                        // equal to the small dot's own radius (user request)
+                                        // — its outer edge stays where the old filled circle
+                                        // was, so the footprint is unchanged, just hollowed out.
                                         true -> Modifier.drawWithContent {
-                                            drawCircle(color = LegalDot, radius = size.minDimension / 2f)
+                                            val dotRadius = size.minDimension * 0.15f
+                                            drawCircle(
+                                                color = LegalDot,
+                                                radius = size.minDimension / 2f - dotRadius / 2f,
+                                                style = Stroke(width = dotRadius),
+                                            )
                                             drawContent()
                                         }
                                         false -> Modifier.drawWithContent {

@@ -63,6 +63,31 @@ class PuzzleEngineTest {
         assertEquals(fenBefore, engine.board.fen)
     }
 
+    /**
+     * Regression: doMove(Move, fullValidation = true) alone accepted a
+     * knight moved straight from c6 to c5 (not even a knight-shaped move,
+     * just an empty square) and scored it WrongMove instead of rejecting
+     * it — surfaced as the app showing "Try again" for a tap/drag that
+     * couldn't possibly have been an attempt at the puzzle's answer.
+     * attemptCoordinates now cross-checks board.legalMoves() first.
+     */
+    @Test
+    fun `a geometrically impossible move for the piece is illegal, not wrong`() {
+        val engine = PuzzleEngine(
+            PuzzleData(
+                id = "test-ruy-lopez-illegal",
+                gamePgn = "e4 e5 Nf3 Nc6 Bb5",
+                initialPly = 5,
+                solution = listOf("a7a6", "b5a4", "g8f6"),
+                rating = 1200,
+            )
+        )
+        val fenBefore = engine.board.fen
+        val outcome = engine.attemptCoordinates(Square.C6, Square.C5)
+        assertIs<MoveOutcome.IllegalMove>(outcome)
+        assertEquals(fenBefore, engine.board.fen)
+    }
+
     /** Ruy Lopez: 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 Nf6 — solver plays twice with one auto-replied opponent move. */
     @Test
     fun `a multi-move puzzle auto-plays the opponent reply and only solves on the final move`() {

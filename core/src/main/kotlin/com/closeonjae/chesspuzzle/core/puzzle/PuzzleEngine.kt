@@ -74,12 +74,19 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
 
     /** Attempt the solver's move given as a tapped from/to square pair. */
     fun attemptCoordinates(from: Square, to: Square): MoveOutcome {
-        val uci = from.toString().lowercase() + to.toString().lowercase()
-        // The 2-arg doMove(Move) overload turned out not to fully validate
-        // (empirically: it happily "moved" an opposing piece out of turn in
-        // testing) — doMove(Move, fullValidation = true) is the one that
-        // actually rejects an illegal from/to pair.
-        return attempt { board.doMove(Move(uci, board.sideToMove), true) }
+        if (isSolved) return MoveOutcome.Solved
+        // doMove(Move, fullValidation = true) turned out to *still* not
+        // fully validate a raw coordinate pair — confirmed empirically that
+        // it happily played e.g. a knight from c6 straight to c5 (not even
+        // a knight-shaped move) as long as the mover's own piece sat on
+        // `from`, scoring it WrongMove instead of rejecting it outright.
+        // board.legalMoves() is chesslib's own move *generator*, so
+        // membership there is the actual source of truth for "can this
+        // piece really reach this square" — check it before ever touching
+        // the board, rather than trusting doMove's own validation.
+        val legalMove = board.legalMoves().firstOrNull { it.from == from && it.to == to }
+            ?: return MoveOutcome.IllegalMove
+        return attempt { board.doMove(legalMove, true) }
     }
 
     private inline fun attempt(playOnBoard: () -> Boolean): MoveOutcome {
