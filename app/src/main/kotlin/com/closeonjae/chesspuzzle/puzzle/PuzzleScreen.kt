@@ -1,8 +1,11 @@
 package com.closeonjae.chesspuzzle.puzzle
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,16 +23,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
@@ -36,10 +53,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Text
+import com.closeonjae.chesspuzzle.R
 import com.closeonjae.chesspuzzle.core.puzzle.PuzzleEngine
 import com.closeonjae.chesspuzzle.input.rememberMoveInputLauncher
 import com.closeonjae.chesspuzzle.ui.theme.Accent
@@ -60,7 +79,9 @@ import com.closeonjae.chesspuzzle.ui.theme.TextSecondary
 import com.github.bhlangonijr.chesslib.Piece
 import com.github.bhlangonijr.chesslib.Side
 import com.github.bhlangonijr.chesslib.Square
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The puzzle screen: an (almost) full-bleed board with the turn label above
@@ -221,6 +242,11 @@ private fun BoardRow(
     }
 }
 
+/** Magnification while long-pressed (user request) — big enough to meaningfully
+ * help precision-tap the small squares, small enough that panning still shows
+ * useful context around the target. */
+private const val ZOOM_SCALE = 2.2f
+
 @Composable
 private fun Board(
     engine: PuzzleEngine?,
@@ -247,66 +273,239 @@ private fun Board(
     } else {
         emptyMap()
     }
-    Column(
-        modifier = Modifier
-            .size(boardSide)
-            .then(if (dimmed) Modifier.background(Background.copy(alpha = 0.65f)) else Modifier),
-    ) {
-        for (displayRow in 0 until 8) {
-            Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                for (displayCol in 0 until 8) {
-                    val row = if (flipped) 7 - displayRow else displayRow
-                    val col = if (flipped) 7 - displayCol else displayCol
-                    val square = squareAt(row, col)
-                    val isLight = (row + col) % 2 == 0
-                    val piece = engine?.board?.getPiece(square) ?: Piece.NONE
-                    val isCapture = legalDestinations[square]
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .weight(1f)
-                            .background(
-                                when {
-                                    square == selected -> SelectedSquare
-                                    isLight -> BoardLight
-                                    else -> BoardDark
-                                },
-                            )
-                            .then(
-                                if (square == hintSquare) {
-                                    Modifier.border(Dimens.LastMoveOutlineWidth, LastMoveOutline)
-                                } else {
-                                    Modifier
-                                },
-                            )
-                            .then(
-                                when (isCapture) {
-                                    true -> Modifier.drawWithContent {
-                                        drawCircle(color = LegalDot, radius = size.minDimension / 2f)
-                                        drawContent()
+
+    val density = LocalDensity.current
+    val boardSidePx = with(density) { boardSide.toPx() }
+    val cellSizePx = boardSidePx / 8f
+
+    fun squareFromOffset(offset: Offset): Square {
+        val row = (offset.y / cellSizePx).toInt().coerceIn(0, 7)
+        val col = (offset.x / cellSizePx).toInt().coerceIn(0, 7)
+        return squareAt(if (flipped) 7 - row else row, if (flipped) 7 - col else col)
+    }
+    fun isOwnPieceAt(square: Square): Boolean {
+        val piece = engine?.board?.getPiece(square) ?: return false
+        return piece != Piece.NONE && piece.pieceSide == engine.sideToMove
+    }
+
+    // Drag-to-move state: the piece being dragged (if any) is skipped in its
+    // origin cell below and drawn instead as a floating overlay that tracks
+    // the raw finger offset from where the drag started.
+    var dragOriginSquare by remember { mutableStateOf<Square?>(null) }
+    var dragOffsetPx by remember { mutableStateOf(Offset.Zero) }
+    // Long-press-to-zoom state (user request): zoomFocusPx is the
+    // board-local point currently centered/magnified — it starts at the
+    // press point and pans by the finger's screen movement scaled down by
+    // ZOOM_SCALE (so the content really does track under the finger, the
+    // same way a magnifying glass does). Releasing acts as a tap on
+    // whatever square is at the focus, i.e. under the center reticle.
+    var zoomFocusPx by remember { mutableStateOf<Offset?>(null) }
+
+    Box(modifier = Modifier.size(boardSide).clipToBounds()) {
+        Column(
+            modifier = Modifier
+                .size(boardSide)
+                .then(if (dimmed) Modifier.background(Background.copy(alpha = 0.65f)) else Modifier)
+                .then(
+                    zoomFocusPx?.let { focus ->
+                        Modifier.graphicsLayer(
+                            scaleX = ZOOM_SCALE,
+                            scaleY = ZOOM_SCALE,
+                            translationX = boardSidePx / 2f - focus.x * ZOOM_SCALE,
+                            translationY = boardSidePx / 2f - focus.y * ZOOM_SCALE,
+                            transformOrigin = TransformOrigin(0f, 0f),
+                        )
+                    } ?: Modifier,
+                )
+                .then(
+                    if (dimmed) {
+                        Modifier
+                    } else {
+                        Modifier.pointerInput(engine, flipped) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val downSquare = squareFromOffset(down.position)
+                                val slop = viewConfiguration.touchSlop
+                                // Race the first moment any of these happens: pointer moves
+                                // past touch slop (drag — checked first: a synthetic/fast
+                                // swipe can deliver its move and its lift in the very same
+                                // event, so "did it move" must win over "did it lift" or a
+                                // real drag gets misread as a plain tap), pointer lifts
+                                // without much movement (plain tap), or neither happens
+                                // before the long-press timeout (zoom). raceEndChange carries
+                                // the event that decided "drag" onward, since it may *also*
+                                // already be the release.
+                                var raceEndChange: PointerInputChange? = null
+                                val outcome = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: continue
+                                        if ((change.position - down.position).getDistance() > slop) {
+                                            raceEndChange = change
+                                            return@withTimeoutOrNull "drag"
+                                        }
+                                        if (change.changedToUpIgnoreConsumed()) {
+                                            change.consume()
+                                            return@withTimeoutOrNull "tap"
+                                        }
                                     }
-                                    false -> Modifier.drawWithContent {
-                                        drawCircle(color = LegalDot, radius = size.minDimension * 0.15f)
-                                        drawContent()
+                                    @Suppress("UNREACHABLE_CODE") null
+                                }
+                                when (outcome) {
+                                    "tap" -> onSquareTapped(downSquare)
+                                    "drag" -> if (isOwnPieceAt(downSquare)) {
+                                        dragOriginSquare = downSquare
+                                        onSquareTapped(downSquare) // select it, same as a first tap
+                                        var change = raceEndChange
+                                        while (change != null) {
+                                            dragOffsetPx = change.position - down.position
+                                            val consumedChange = change
+                                            consumedChange.consume()
+                                            if (consumedChange.changedToUpIgnoreConsumed()) {
+                                                onSquareTapped(squareFromOffset(consumedChange.position))
+                                                break
+                                            }
+                                            val event = awaitPointerEvent()
+                                            change = event.changes.firstOrNull { it.id == down.id }
+                                        }
+                                        dragOriginSquare = null
+                                        dragOffsetPx = Offset.Zero
+                                    } else if (raceEndChange?.changedToUpIgnoreConsumed() != true) {
+                                        // Not a piece of ours to pick up — drain the rest of
+                                        // the gesture as a no-op rather than let it leak into
+                                        // the next one.
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                            change.consume()
+                                            if (change.changedToUpIgnoreConsumed()) break
+                                        }
                                     }
-                                    null -> Modifier
-                                },
-                            )
-                            .clickable(enabled = !dimmed) { onSquareTapped(square) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (piece != Piece.NONE) {
-                            PieceIcon(
-                                pieceType = piece.pieceType,
-                                isWhite = piece.pieceSide == Side.WHITE,
-                                modifier = Modifier.fillMaxSize(0.82f),
-                            )
+                                    else -> { // long-press timeout: zoom + pan
+                                        var focus = down.position
+                                        var lastPos = down.position
+                                        zoomFocusPx = focus
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                            change.consume()
+                                            if (change.changedToUpIgnoreConsumed()) {
+                                                onSquareTapped(squareFromOffset(focus))
+                                                break
+                                            }
+                                            focus += (change.position - lastPos) / ZOOM_SCALE
+                                            focus = Offset(
+                                                focus.x.coerceIn(0f, boardSidePx),
+                                                focus.y.coerceIn(0f, boardSidePx),
+                                            )
+                                            lastPos = change.position
+                                            zoomFocusPx = focus
+                                        }
+                                        zoomFocusPx = null
+                                    }
+                                }
+                            }
+                        }
+                    },
+                ),
+        ) {
+            for (displayRow in 0 until 8) {
+                Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    for (displayCol in 0 until 8) {
+                        val row = if (flipped) 7 - displayRow else displayRow
+                        val col = if (flipped) 7 - displayCol else displayCol
+                        val square = squareAt(row, col)
+                        val isLight = (row + col) % 2 == 0
+                        val piece = engine?.board?.getPiece(square) ?: Piece.NONE
+                        val isCapture = legalDestinations[square]
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .weight(1f)
+                                .background(
+                                    when {
+                                        square == selected -> SelectedSquare
+                                        isLight -> BoardLight
+                                        else -> BoardDark
+                                    },
+                                )
+                                .then(
+                                    if (square == hintSquare) {
+                                        Modifier.border(Dimens.LastMoveOutlineWidth, LastMoveOutline)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .then(
+                                    when (isCapture) {
+                                        true -> Modifier.drawWithContent {
+                                            drawCircle(color = LegalDot, radius = size.minDimension / 2f)
+                                            drawContent()
+                                        }
+                                        false -> Modifier.drawWithContent {
+                                            drawCircle(color = LegalDot, radius = size.minDimension * 0.15f)
+                                            drawContent()
+                                        }
+                                        null -> Modifier
+                                    },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (piece != Piece.NONE && square != dragOriginSquare) {
+                                PieceIcon(
+                                    pieceType = piece.pieceType,
+                                    isWhite = piece.pieceSide == Side.WHITE,
+                                    modifier = Modifier.fillMaxSize(0.82f),
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+
+        // Floating piece dragged out of its origin square, following the
+        // raw (unzoomed) finger offset — drawn as a sibling above the
+        // (possibly zoomed) board, so it's never itself scaled/panned.
+        dragOriginSquare?.let { origin ->
+            val piece = engine?.board?.getPiece(origin) ?: Piece.NONE
+            if (piece != Piece.NONE) {
+                val (row, col) = rowColOf(origin)
+                val displayRow = if (flipped) 7 - row else row
+                val displayCol = if (flipped) 7 - col else col
+                val centerPx = Offset((displayCol + 0.5f) * cellSizePx, (displayRow + 0.5f) * cellSizePx)
+                val pieceSizePx = cellSizePx * 0.82f
+                val topLeftPx = centerPx + dragOffsetPx - Offset(pieceSizePx / 2f, pieceSizePx / 2f)
+                PieceIcon(
+                    pieceType = piece.pieceType,
+                    isWhite = piece.pieceSide == Side.WHITE,
+                    modifier = Modifier
+                        .size(with(density) { pieceSizePx.toDp() })
+                        .offset { IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt()) },
+                )
+            }
+        }
+
+        // Center reticle while zoomed — marks exactly which point release
+        // will act on (the focus, always re-centered by the graphicsLayer
+        // translation above), since that's no longer literally "under the
+        // finger" once magnified.
+        if (zoomFocusPx != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(with(density) { (cellSizePx * ZOOM_SCALE).toDp() })
+                    .border(Dimens.LastMoveOutlineWidth, Accent, RoundedCornerShape(4.dp)),
+            )
+        }
     }
+}
+
+private fun rowColOf(square: Square): Pair<Int, Int> {
+    val name = square.toString()
+    val col = name[0] - 'A'
+    val row = 8 - (name[1] - '0')
+    return row to col
 }
 
 @Composable
@@ -342,7 +541,12 @@ private fun HintTab(boardSide: Dp, onTapped: () -> Unit) {
             .clickable(onClick = onTapped),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = "💡", style = AppType.caption, color = Accent)
+        Image(
+            painter = painterResource(id = R.drawable.ic_hint),
+            contentDescription = null,
+            colorFilter = ColorFilter.tint(Accent),
+            modifier = Modifier.size(14.dp),
+        )
     }
 }
 

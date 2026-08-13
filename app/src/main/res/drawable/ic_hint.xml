@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lightbulb glyph, flat single-color fill — drawn as a real vector icon
+  (tinted at draw time, PuzzleScreen.kt's HintTab) instead of the 💡 emoji
+  we used before: emoji render in their own fixed multi-color palette
+  regardless of the requested text color, which looked out of place next
+  to the keyboard tab's flat, accent-tinted "⌨" glyph (user feedback).
+  Path is the standard Material Design "lightbulb" icon (Google, Apache
+  2.0 — https://fonts.google.com/icons), 24x24 viewport.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M9,21c0,0.55 0.45,1 1,1h4c0.55,0 1,-0.45 1,-1v-1H9V21z M12,2C8.14,2 5,5.14 5,9c0,2.38 1.19,4.47 3,5.74V17c0,0.55 0.45,1 1,1h6c0.55,0 1,-0.45 1,-1v-2.26c1.81,-1.27 3,-3.36 3,-5.74C19,5.14 15.86,2 12,2z" />
+</vector>
