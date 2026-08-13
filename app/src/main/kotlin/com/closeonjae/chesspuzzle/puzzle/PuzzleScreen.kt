@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,7 +80,6 @@ import com.github.bhlangonijr.chesslib.Piece
 import com.github.bhlangonijr.chesslib.Side
 import com.github.bhlangonijr.chesslib.Square
 import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -100,20 +98,17 @@ import kotlinx.coroutines.withTimeoutOrNull
 fun PuzzleScreen(viewModel: PuzzleViewModel) {
     val state by viewModel.uiState.collectAsState()
 
-    LaunchedEffect(state.feedback) {
-        if (state.feedback == MoveFeedback.WRONG) {
-            delay(600)
-            viewModel.clearWrongFeedback()
-        }
-    }
-
     val launchMoveInput = rememberMoveInputLauncher { text -> text?.let(viewModel::onSanEntered) }
 
     Box(modifier = Modifier.fillMaxSize().background(Background)) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val diameter = minOf(maxWidth, maxHeight)
             val boardSide = diameter * Dimens.BoardInsetRatio
-            val dimmed = state.isLoading || state.error != null
+            // A wrong move now dims the board and waits for an explicit Retry
+            // tap instead of auto-clearing after a timer (user request) — the
+            // wrong move is already undone underneath, so tapping Retry is
+            // exactly "go back to where I was, try again".
+            val dimmed = state.isLoading || state.error != null || state.feedback == MoveFeedback.WRONG
 
             TurnLabel(
                 state = state,
@@ -157,9 +152,12 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             // CompactButton variant instead — its own default height/
             // padding are built to be shorter, rather than fighting the
             // standard Button's floor.
-            if (state.error != null) {
+            // Same button/state now also covers a wrong move (user request)
+            // — it dismisses the WRONG feedback instead of loading a new
+            // puzzle, since the wrong move itself was already undone.
+            if (state.error != null || state.feedback == MoveFeedback.WRONG) {
                 CompactButton(
-                    onClick = viewModel::loadNextPuzzle,
+                    onClick = if (state.error != null) viewModel::loadNextPuzzle else viewModel::clearWrongFeedback,
                     modifier = Modifier.align(Alignment.Center),
                     shape = RoundedCornerShape(Dimens.ButtonCornerRadius),
                 ) {
@@ -182,7 +180,7 @@ private fun TurnLabel(state: PuzzleUiState, modifier: Modifier = Modifier) {
             text = "Loading…"; color = TextSecondary
         }
         state.feedback == MoveFeedback.WRONG -> {
-            text = "Try again"; color = ErrorColor
+            text = "Wrong move"; color = ErrorColor
         }
         state.feedback == MoveFeedback.SOLVED -> {
             text = "Correct"; color = Success

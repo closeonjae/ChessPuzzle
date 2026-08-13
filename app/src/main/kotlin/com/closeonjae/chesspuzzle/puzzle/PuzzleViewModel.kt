@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** DESIGN.md 5절 states: default (turn label), WRONG (brief error flash), SOLVED (brief success flash). */
+/** DESIGN.md 5절 states: default (turn label), WRONG (dims the board, waits for a Retry tap), SOLVED (brief success flash). */
 enum class MoveFeedback { NONE, WRONG, SOLVED }
 
 data class PuzzleUiState(
@@ -155,7 +155,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         }
     }
 
-    /** Clears a transient WRONG flash back to the normal turn label (PuzzleScreen calls this after a short delay). */
+    /** Dismisses a WRONG state back to the normal turn label — the wrong move was already undone, this is just "let me try again" (user request: an explicit Retry tap, not an auto-timeout). */
     fun clearWrongFeedback() {
         _uiState.update { if (it.feedback == MoveFeedback.WRONG) it.copy(feedback = MoveFeedback.NONE) else it }
     }
