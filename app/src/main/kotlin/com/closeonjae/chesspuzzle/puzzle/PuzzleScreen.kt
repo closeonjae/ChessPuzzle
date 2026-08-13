@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,10 +21,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Text
@@ -247,21 +253,67 @@ private fun Board(
 
 @Composable
 private fun KeyboardTab(boardSide: Dp, onTapped: () -> Unit) {
-    val shape = RoundedCornerShape(
-        topStart = CornerSize(3.dp),
-        topEnd = CornerSize(50),
-        bottomEnd = CornerSize(50),
-        bottomStart = CornerSize(3.dp),
-    )
+    val tabHeight = boardSide * Dimens.KeyboardTabHeightRatio
     Box(
         modifier = Modifier
-            .size(width = Dimens.KeyboardTabWidth, height = boardSide * Dimens.KeyboardTabHeightRatio)
-            .clip(shape)
+            .size(width = Dimens.KeyboardTabWidth, height = tabHeight)
+            .clip(HalfMoonShape)
             .background(Surface)
             .clickable(onClick = onTapped),
         contentAlignment = Alignment.Center,
     ) {
         Text(text = "⌨", color = Accent)
+    }
+}
+
+/**
+ * Flat straight edge on the left (flush against the board), fully curved
+ * on the right — an elliptical cap (rx = half the shape's own width,
+ * ry = half its height), not a circular one.
+ *
+ * `RoundedCornerShape` can't produce this: each of its corners takes a
+ * single circular radius, clamped to fit within *both* adjacent edges — on
+ * a tall, narrow box like this one (22dp wide, well over 100dp tall) that
+ * clamp caps the radius at roughly half the *width* regardless of what's
+ * requested, leaving a long straight run in the middle of the right edge
+ * (confirmed on an emulator screenshot, not just reasoned about). A custom
+ * outline tracing an explicit half-ellipse is the only way to span the
+ * full height with no straight segment left.
+ */
+private object HalfMoonShape : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val w = size.width
+        val h = size.height
+        val leftCornerRadius = (density.density * 3f).coerceAtMost(minOf(w, h) / 2f)
+        val path = Path().apply {
+            moveTo(leftCornerRadius, 0f)
+            lineTo(w / 2f, 0f)
+            // Half-ellipse inscribed in the full w×h box: rx = w/2, ry = h/2 —
+            // traced top-center → rightmost point → bottom-center, i.e. the
+            // entire right half of the shape becomes one continuous curve.
+            arcTo(
+                rect = Rect(left = 0f, top = 0f, right = w, bottom = h),
+                startAngleDegrees = -90f,
+                sweepAngleDegrees = 180f,
+                forceMoveTo = false,
+            )
+            lineTo(leftCornerRadius, h)
+            arcTo(
+                rect = Rect(left = 0f, top = h - 2 * leftCornerRadius, right = 2 * leftCornerRadius, bottom = h),
+                startAngleDegrees = 90f,
+                sweepAngleDegrees = 90f,
+                forceMoveTo = false,
+            )
+            lineTo(0f, leftCornerRadius)
+            arcTo(
+                rect = Rect(left = 0f, top = 0f, right = 2 * leftCornerRadius, bottom = 2 * leftCornerRadius),
+                startAngleDegrees = 180f,
+                sweepAngleDegrees = 90f,
+                forceMoveTo = false,
+            )
+            close()
+        }
+        return Outline.Generic(path)
     }
 }
 
