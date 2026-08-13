@@ -31,8 +31,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -65,9 +65,9 @@ import kotlinx.coroutines.delay
  * keyboard-entry tab to its right — DESIGN.md 4/5절.
  *
  * Deliberately deferred for this first buildable pass (documented, not
- * silently dropped): the piece glyph outline stroke, and animated
- * last-move-square highlighting. Both are cosmetic; the underlying state
- * (selection, correct/wrong/solved feedback, rating) is fully wired.
+ * silently dropped): animated last-move-square highlighting. Cosmetic only
+ * — the underlying state (selection, correct/wrong/solved feedback,
+ * rating) is fully wired.
  */
 @Composable
 fun PuzzleScreen(viewModel: PuzzleViewModel) {
