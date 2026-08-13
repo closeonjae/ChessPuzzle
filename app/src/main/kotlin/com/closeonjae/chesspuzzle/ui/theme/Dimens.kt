@@ -4,9 +4,13 @@ import androidx.compose.ui.unit.dp
 
 // DESIGN.md 4절, verbatim.
 object Dimens {
-    /** Board side = screen diameter / sqrt(2): the largest square inscribed in the round
-     * safe area with all four corners inside the circle (no clipping) — DESIGN.md 4절. */
-    const val BoardInsetRatio = 0.7071f
+    /** Board side, as a fraction of screen diameter. The pure "inscribed square"
+     * value (1/sqrt(2) ≈ 0.7071) touches the circle with nothing else — but the
+     * ranks column sits *outside* the board's own left edge, so at that ratio it
+     * has nowhere left to go without leaving the round safe area (confirmed on an
+     * emulator screenshot: the rank 8/1 digits were partly clipped). Shrunk to
+     * leave real margin for the ranks column — DESIGN.md 4절. */
+    const val BoardInsetRatio = 0.64f
 
     val ButtonHeight = 52.dp
     val ButtonCornerRadius = 26.dp

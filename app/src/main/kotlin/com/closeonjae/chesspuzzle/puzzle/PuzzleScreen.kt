@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -88,6 +89,19 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 13.dp),
             )
 
+            // The row (ranks + board + keyboard tab) is wider after the board
+            // than before it (kbd tab > ranks column), so centering the row
+            // as a whole leaves the board itself off-center — and the ranks
+            // column, sitting outside the board's own corner (which is
+            // already at the circle's edge by construction), clips the round
+            // screen on the left. Shift the whole group right by half that
+            // width difference to re-center the board and pull the ranks
+            // column back inside the safe area.
+            val groupShift = (
+                Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart + Dimens.KeyboardTabWidth -
+                    Dimens.RanksColumnWidth - Dimens.BoardRowGap
+                ) / 2
+
             BoardRow(
                 engine = state.engine,
                 selected = state.selectedSquare,
@@ -95,7 +109,7 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
                 boardSide = boardSide,
                 onSquareTapped = viewModel::onSquareTapped,
                 onKeyboardTapped = launchMoveInput,
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier.align(Alignment.Center).offset(x = groupShift),
             )
 
             RatingChip(
