@@ -35,3 +35,7 @@ val SelectedSquare = Color(
 )
 val LegalDot = Color(0x40000000) // rgba(0,0,0,0.25) — legal-move dot/capture-ring
 val LastMoveOutline = Color(0xE6C15F3C) // rgba(193,95,60,0.9)
+// Hint square wash (user request, given as CSS-style #FF000080 = RRGGBB +
+// alpha-last, not this file's usual AARRGGBB) — translucent red sitting
+// between the square's own background and the piece drawn on top of it.
+val HintTint = Color(0x80FF0000) // rgba(255,0,0,0.50)

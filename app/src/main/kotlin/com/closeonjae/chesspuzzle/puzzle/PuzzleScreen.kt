@@ -2,7 +2,6 @@ package com.closeonjae.chesspuzzle.puzzle
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -70,7 +70,7 @@ import com.closeonjae.chesspuzzle.ui.theme.BoardDark
 import com.closeonjae.chesspuzzle.ui.theme.BoardLight
 import com.closeonjae.chesspuzzle.ui.theme.Dimens
 import com.closeonjae.chesspuzzle.ui.theme.ErrorColor
-import com.closeonjae.chesspuzzle.ui.theme.LastMoveOutline
+import com.closeonjae.chesspuzzle.ui.theme.HintTint
 import com.closeonjae.chesspuzzle.ui.theme.LegalDot
 import com.closeonjae.chesspuzzle.ui.theme.RatingDown
 import com.closeonjae.chesspuzzle.ui.theme.RatingUp
@@ -151,9 +151,18 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             // Centered retry button (user request) — the top "Connection
             // Lost" text used to double as the only retry affordance; a
             // real button in the middle of the screen is a much more
-            // obvious target than small text at the very top edge.
+            // obvious target than small text at the very top edge. Sized
+            // explicitly to DESIGN.md's button spec (same values
+            // LoginScreen's button uses) — same format, per user request.
             if (state.error != null) {
-                Button(onClick = viewModel::loadNextPuzzle, modifier = Modifier.align(Alignment.Center)) {
+                Button(
+                    onClick = viewModel::loadNextPuzzle,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth(0.7f)
+                        .height(Dimens.ButtonHeight),
+                    shape = RoundedCornerShape(Dimens.ButtonCornerRadius),
+                ) {
                     Text(text = "Retry", style = AppType.buttonLabel)
                 }
             }
@@ -275,19 +284,16 @@ private fun Board(
     // cell. isLight below stays keyed off the true (unflipped) row/col,
     // since a square's own color never changes with viewing angle.
     val flipped = engine?.sideToMove == Side.BLACK
-    // The hinted square (user request: make it unmistakable which piece to
-    // move) gets the exact same treatment as a real selection — filled
-    // background + legal-move dots, not just a thin outline — plus the
-    // accent border on top of that, kept below, as an extra "this is a
-    // hint, not something you tapped yourself" cue.
-    val highlighted = selected ?: hintSquare
-    // Legal destinations of the selected/hinted piece, keyed to whether
-    // they capture (an opponent piece is there) or not — user request: an
-    // empty legal square gets a small dot, a capturable square gets a ring
-    // inscribed in the whole square, both in the same legalDot color.
-    val legalDestinations: Map<Square, Boolean> = if (highlighted != null && engine != null) {
+    // Legal destinations of the selected piece, keyed to whether they
+    // capture (an opponent piece is there) or not — user request: an empty
+    // legal square gets a small dot, a capturable square gets a ring
+    // inscribed in the whole square, both in the same legalDot color. The
+    // hinted square deliberately does *not* get this treatment (user
+    // request — it should read as a hint, not as if the solver tapped it
+    // themselves); see the separate hintTint overlay below instead.
+    val legalDestinations: Map<Square, Boolean> = if (selected != null && engine != null) {
         engine.board.legalMoves()
-            .filter { it.from == highlighted }
+            .filter { it.from == selected }
             .associate { it.to to (engine.board.getPiece(it.to) != Piece.NONE) }
     } else {
         emptyMap()
@@ -443,30 +449,33 @@ private fun Board(
                                 .weight(1f)
                                 .background(
                                     when {
-                                        square == selected || square == hintSquare -> SelectedSquare
+                                        square == selected -> SelectedSquare
                                         isLight -> BoardLight
                                         else -> BoardDark
                                     },
                                 )
                                 .then(
-                                    if (square == hintSquare) {
-                                        Modifier.border(Dimens.LastMoveOutlineWidth, LastMoveOutline)
-                                    } else {
-                                        Modifier
-                                    },
+                                    // Hint square (user request): not a full selection look
+                                    // — just a translucent color wash sitting between the
+                                    // square's own background and the piece drawn on top of
+                                    // it (a second .background() layers over the first but
+                                    // still stays behind the piece, which is this Box's
+                                    // actual child content).
+                                    if (square == hintSquare) Modifier.background(HintTint) else Modifier,
                                 )
                                 .then(
                                     when (isCapture) {
                                         // Hollow ring inscribed in the square, stroke width
-                                        // equal to the small dot's own radius (user request)
-                                        // — its outer edge stays where the old filled circle
+                                        // 2/3 of the small dot's own radius (user request) —
+                                        // its outer edge stays where the old filled circle
                                         // was, so the footprint is unchanged, just hollowed out.
                                         true -> Modifier.drawWithContent {
                                             val dotRadius = size.minDimension * 0.15f
+                                            val ringWidth = dotRadius * 2f / 3f
                                             drawCircle(
                                                 color = LegalDot,
-                                                radius = size.minDimension / 2f - dotRadius / 2f,
-                                                style = Stroke(width = dotRadius),
+                                                radius = size.minDimension / 2f - ringWidth / 2f,
+                                                style = Stroke(width = ringWidth),
                                             )
                                             drawContent()
                                         }

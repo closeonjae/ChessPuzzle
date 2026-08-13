@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,6 +21,7 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Text
 import com.closeonjae.chesspuzzle.ui.theme.AppType
 import com.closeonjae.chesspuzzle.ui.theme.Background
+import com.closeonjae.chesspuzzle.ui.theme.Dimens
 import com.closeonjae.chesspuzzle.ui.theme.ErrorColor
 import com.closeonjae.chesspuzzle.ui.theme.TextSecondary
 
@@ -31,6 +35,7 @@ fun LoginScreen(viewModel: LoginViewModel) {
         contentAlignment = Alignment.Center,
     ) {
         Column(
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -45,7 +50,13 @@ fun LoginScreen(viewModel: LoginViewModel) {
                     textAlign = TextAlign.Center,
                 )
             } else {
-                Button(onClick = viewModel::signIn) {
+                // Sized explicitly to DESIGN.md's button spec — 4절, same
+                // values PuzzleScreen's Connection Lost retry button uses.
+                Button(
+                    onClick = viewModel::signIn,
+                    modifier = Modifier.fillMaxWidth(0.7f).height(Dimens.ButtonHeight),
+                    shape = RoundedCornerShape(Dimens.ButtonCornerRadius),
+                ) {
                     Text(text = "Sign in with Lichess", style = AppType.buttonLabel)
                 }
                 if (state.error != null) {
