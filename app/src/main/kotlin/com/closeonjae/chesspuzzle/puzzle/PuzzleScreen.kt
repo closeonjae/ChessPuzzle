@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -152,13 +151,14 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             // Lost" text used to double as the only retry affordance; a
             // real button in the middle of the screen is a much more
             // obvious target than small text at the very top edge. Same
-            // height/corner radius as LoginScreen's button (DESIGN.md
-            // spec), but sized to fit its own short "Retry" label instead
-            // of that button's 70%-of-screen width (user request).
+            // corner radius as LoginScreen's button (DESIGN.md spec), but
+            // sized to fit its own short "Retry" label on both axes
+            // (neither the 70%-of-screen width nor the fixed height) —
+            // user request.
             if (state.error != null) {
                 Button(
                     onClick = viewModel::loadNextPuzzle,
-                    modifier = Modifier.align(Alignment.Center).height(Dimens.ButtonHeight),
+                    modifier = Modifier.align(Alignment.Center),
                     shape = RoundedCornerShape(Dimens.ButtonCornerRadius),
                 ) {
                     Text(text = "Retry", style = AppType.buttonLabel, textAlign = TextAlign.Center)
