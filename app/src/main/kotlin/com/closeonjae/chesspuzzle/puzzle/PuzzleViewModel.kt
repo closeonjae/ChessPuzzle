@@ -17,11 +17,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** DESIGN.md 5절 states: default (turn label), WRONG (dims the board, waits for a Retry tap), SOLVED (brief success flash). */
+/** DESIGN.md 5절 states: default (turn label), WRONG (dims the board, waits for a Retry tap), SOLVED (dims the board, holds the finished position until [PuzzleViewModel.onSolvedTapped] moves on — user request: no more auto-advance). */
 enum class MoveFeedback { NONE, WRONG, SOLVED }
 
 /** How long a piece takes to slide from one square to another (user request) — PuzzleScreen's Board() animates to this, and this file times the opponent-reply animation to start right after the solver's own finishes. */
 const val MOVE_ANIMATION_MS = 220L
+
+/** Extra pause after the solver's own move finishes animating before the opponent's reply starts moving (user request) — a visible beat between "I moved" and "they moved" instead of the two animations chaining back-to-back. */
+const val OPPONENT_REPLY_PAUSE_MS = 100L
 
 data class PuzzleUiState(
     val engine: PuzzleEngine? = null,
@@ -47,6 +50,19 @@ data class PuzzleUiState(
     val feedback: MoveFeedback = MoveFeedback.NONE,
     val isLoading: Boolean = true,
     val error: String? = null,
+    /**
+     * The next puzzle, fetched silently in the background as soon as this
+     * one is solved (user request — the solved board stays on screen,
+     * untouched, until the solver taps to move on; no more auto-advance).
+     * Null until that background fetch finishes; consumed by
+     * [PuzzleViewModel.advanceToNextPuzzle].
+     */
+    val nextEngine: PuzzleEngine? = null,
+    val nextRating: Int? = null,
+    /** The background fetch of [nextEngine] failed (user request: tapping a solved puzzle whose next puzzle failed to load shows a Retry button instead of doing nothing). */
+    val nextPuzzleError: Boolean = false,
+    /** Set by a tap on a solved board before [nextEngine] is ready (user request) — shows a loading spinner (or, if [nextPuzzleError] is also true, a Retry button) instead of the tap looking ignored; the fetch finishing on its own then finishes the advance. */
+    val awaitingNextPuzzle: Boolean = false,
 )
 
 /** Drives one puzzle screen's worth of state: fetch → tap/SAN input → report → fetch next (PLAN.md 4절). */
@@ -71,28 +87,14 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 hintUsedCount = 0,
                 hadWrongAttempt = false,
                 feedback = MoveFeedback.NONE,
+                nextEngine = null,
+                nextRating = null,
+                nextPuzzleError = false,
+                awaitingNextPuzzle = false,
             )
         }
         viewModelScope.launch {
-            repository.nextPuzzle()
-                // PuzzleEngine's init replays/validates the puzzle's own PGN
-                // and solution moves and throws on anything unexpected there
-                // (RESEARCH.md 8절) — mapCatching keeps a malformed puzzle
-                // from that being an *uncaught* exception that crashes the
-                // whole app (real-device report: a few Retry taps after
-                // "Connection Lost" eventually force-closed the app), routing
-                // it into the same error state as any other fetch failure.
-                // Logged here (before construction can throw) so a future
-                // real-puzzle failure can be diagnosed from `adb logcat`
-                // instead of guessed at (DESIGN.md 5절 힌트 버그 기록).
-                .mapCatching {
-                    Log.d(
-                        "PuzzleViewModel",
-                        "puzzle=${it.puzzle.id} initialPly=${it.puzzle.initialPly} " +
-                            "gamePgn=\"${it.game.pgn}\" solution=${it.puzzle.solution}",
-                    )
-                    PuzzleEngine(it.toPuzzleData()) to it.puzzle.rating
-                }
+            fetchPuzzle()
                 .onSuccess { (engine, rating) ->
                     _uiState.update {
                         it.copy(engine = engine, rating = rating, ratingDelta = null, isLoading = false)
@@ -101,6 +103,101 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 .onFailure { e ->
                     _uiState.update { it.copy(isLoading = false, error = e.message ?: "Connection failed") }
                 }
+        }
+    }
+
+    /**
+     * Fetches one puzzle and wraps it in a [PuzzleEngine] — shared by
+     * [loadNextPuzzle] (the current puzzle, board dimmed while it's in
+     * flight) and [fetchNextPuzzleInBackground] (the *next* puzzle,
+     * prefetched silently while the just-solved board is still showing).
+     */
+    private suspend fun fetchPuzzle(): Result<Pair<PuzzleEngine, Int?>> =
+        repository.nextPuzzle()
+            // PuzzleEngine's init replays/validates the puzzle's own PGN
+            // and solution moves and throws on anything unexpected there
+            // (RESEARCH.md 8절) — mapCatching keeps a malformed puzzle
+            // from that being an *uncaught* exception that crashes the
+            // whole app (real-device report: a few Retry taps after
+            // "Connection Lost" eventually force-closed the app), routing
+            // it into the same error state as any other fetch failure.
+            // Logged here (before construction can throw) so a future
+            // real-puzzle failure can be diagnosed from `adb logcat`
+            // instead of guessed at (DESIGN.md 5절 힌트 버그 기록).
+            .mapCatching {
+                Log.d(
+                    "PuzzleViewModel",
+                    "puzzle=${it.puzzle.id} initialPly=${it.puzzle.initialPly} " +
+                        "gamePgn=\"${it.game.pgn}\" solution=${it.puzzle.solution}",
+                )
+                PuzzleEngine(it.toPuzzleData()) to it.puzzle.rating
+            }
+
+    /**
+     * Loads the next puzzle silently in the background (user request) —
+     * called the moment the current one is solved, so it's usually already
+     * sitting in [PuzzleUiState.nextEngine] by the time the solver taps to
+     * move on. Also used by [retryNextPuzzle] to try again after a failure.
+     */
+    private fun fetchNextPuzzleInBackground() {
+        viewModelScope.launch {
+            fetchPuzzle()
+                .onSuccess { (engine, rating) ->
+                    _uiState.update { it.copy(nextEngine = engine, nextRating = rating, nextPuzzleError = false) }
+                    // The solver already tapped once and is waiting on this
+                    // exact fetch (PuzzleUiState.awaitingNextPuzzle) — finish
+                    // the advance now instead of making them tap again.
+                    if (_uiState.value.awaitingNextPuzzle) advanceToNextPuzzle()
+                }
+                .onFailure {
+                    _uiState.update { it.copy(nextPuzzleError = true) }
+                }
+        }
+    }
+
+    /** Retry button on a solved puzzle whose background next-puzzle fetch failed (user request). */
+    fun retryNextPuzzle() {
+        _uiState.update { it.copy(nextPuzzleError = false) }
+        fetchNextPuzzleInBackground()
+    }
+
+    /**
+     * Tap-anywhere to move on from a solved puzzle (user request — mirrors
+     * [clearWrongFeedback]'s tap-anywhere for a wrong move). The next
+     * puzzle has usually already finished loading in the background by now
+     * ([reportSolvedAndPrefetchNext]), so this normally swaps to it right
+     * away; if it hasn't yet, this just arms [PuzzleUiState.awaitingNextPuzzle]
+     * so the fetch completing on its own finishes the swap, while the
+     * screen shows a loading spinner (or a Retry button, if that fetch
+     * already failed) instead of the tap looking ignored.
+     */
+    fun onSolvedTapped() {
+        val state = _uiState.value
+        if (state.feedback != MoveFeedback.SOLVED) return
+        if (state.nextEngine != null) advanceToNextPuzzle() else _uiState.update { it.copy(awaitingNextPuzzle = true) }
+    }
+
+    /** Swaps the solved board for the already-fetched [PuzzleUiState.nextEngine] (fresh per-attempt fields reset, same as [loadNextPuzzle]). */
+    private fun advanceToNextPuzzle() {
+        val state = _uiState.value
+        val engine = state.nextEngine ?: return
+        _uiState.update {
+            it.copy(
+                engine = engine,
+                rating = state.nextRating,
+                ratingDelta = null,
+                selectedSquare = null,
+                hintSquare = null,
+                animatedMove = null,
+                wrongAttempt = null,
+                hintUsedCount = 0,
+                hadWrongAttempt = false,
+                feedback = MoveFeedback.NONE,
+                nextEngine = null,
+                nextRating = null,
+                nextPuzzleError = false,
+                awaitingNextPuzzle = false,
+            )
         }
     }
 
@@ -151,7 +248,13 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
             }
         } else {
             val move = engine.hintMove ?: return
-            _uiState.update { it.copy(hintSquare = null) }
+            // hintSquare is cleared by attemptSafely/handleOutcome below
+            // (every outcome branch resets it) rather than pre-emptively
+            // here — folds the hint-square clear into the same state
+            // update as the move's own outcome instead of two separate
+            // back-to-back updates, so a hint-triggered move's animation
+            // trigger looks exactly like any other move's (user request:
+            // hint should animate too).
             attemptSafely(engine) { it.attemptCoordinates(move.from, move.to) }
         }
     }
@@ -171,7 +274,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         val outcome = try {
             attempt(engine)
         } catch (e: IllegalStateException) {
-            _uiState.update { it.copy(selectedSquare = null, error = e.message ?: "Move failed") }
+            _uiState.update { it.copy(selectedSquare = null, hintSquare = null, error = e.message ?: "Move failed") }
             return
         }
         handleOutcome(engine, outcome)
@@ -179,10 +282,11 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
 
     private fun handleOutcome(engine: PuzzleEngine, outcome: MoveOutcome) {
         when (outcome) {
-            MoveOutcome.IllegalMove -> _uiState.update { it.copy(selectedSquare = null) }
+            MoveOutcome.IllegalMove -> _uiState.update { it.copy(selectedSquare = null, hintSquare = null) }
             is MoveOutcome.WrongMove -> _uiState.update {
                 it.copy(
                     selectedSquare = null,
+                    hintSquare = null,
                     feedback = MoveFeedback.WRONG,
                     wrongAttempt = outcome.attempted,
                     hadWrongAttempt = true,
@@ -190,16 +294,22 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
             }
             is MoveOutcome.Correct -> {
                 _uiState.update {
-                    it.copy(selectedSquare = null, feedback = MoveFeedback.NONE, animatedMove = outcome.solverMove)
+                    it.copy(
+                        selectedSquare = null,
+                        hintSquare = null,
+                        feedback = MoveFeedback.NONE,
+                        animatedMove = outcome.solverMove,
+                    )
                 }
                 // The opponent's reply already happened on the board by now
                 // (PuzzleEngine plays both moves before returning) — delayed
-                // just long enough for the solver's own move to finish
-                // animating first, so the two don't overlap (user request:
-                // a real "I move, then they move" feel, not both at once).
+                // until the solver's own move finishes animating, plus a
+                // further beat (OPPONENT_REPLY_PAUSE_MS, user request), so
+                // the two don't overlap and don't chain instantly either —
+                // a real "I move, then [pause] they move" feel.
                 outcome.opponentReply?.let { reply ->
                     viewModelScope.launch {
-                        delay(MOVE_ANIMATION_MS)
+                        delay(MOVE_ANIMATION_MS + OPPONENT_REPLY_PAUSE_MS)
                         _uiState.update { it.copy(animatedMove = reply) }
                     }
                 }
@@ -215,15 +325,22 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 val state = _uiState.value
                 val win = state.hintUsedCount == 0 && !state.hadWrongAttempt
                 _uiState.update {
-                    val base = it.copy(selectedSquare = null, feedback = MoveFeedback.SOLVED)
+                    val base = it.copy(selectedSquare = null, hintSquare = null, feedback = MoveFeedback.SOLVED)
                     if (outcome.solverMove != null) base.copy(animatedMove = outcome.solverMove) else base
                 }
-                reportSolvedAndAdvance(engine.id, win)
+                reportSolvedAndPrefetchNext(engine.id, win)
             }
         }
     }
 
-    private fun reportSolvedAndAdvance(puzzleId: String, win: Boolean) {
+    /**
+     * Reports the solve to Lichess (rating update) and starts loading the
+     * *next* puzzle silently in the background (user request) — the solved
+     * board now stays on screen exactly as it finished, with no auto-
+     * advance and no timer, until [onSolvedTapped] moves on, so there's no
+     * reason to wait before starting that fetch.
+     */
+    private fun reportSolvedAndPrefetchNext(puzzleId: String, win: Boolean) {
         viewModelScope.launch {
             repository.reportSolved(puzzleId, win = win).onSuccess { response ->
                 val diff = response.rounds.firstOrNull()?.ratingDiff
@@ -236,10 +353,8 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                     _uiState.update { it.copy(rating = glicko.rating.toInt(), ratingDelta = diff) }
                 }
             }
-            // Hold the "Correct" state briefly (DESIGN.md 5절: ~0.8s) before auto-advancing.
-            delay(800)
-            loadNextPuzzle()
         }
+        fetchNextPuzzleInBackground()
     }
 
     /**

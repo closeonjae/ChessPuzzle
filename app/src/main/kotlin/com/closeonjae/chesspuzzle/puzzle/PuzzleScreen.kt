@@ -114,10 +114,17 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
                 // already undone underneath, this just dismisses the dim/
                 // "Retry" state. Only active while that state is showing, so
                 // it doesn't steal normal board taps otherwise.
-                if (state.feedback == MoveFeedback.WRONG) {
-                    Modifier.clickable(onClick = viewModel::clearWrongFeedback)
-                } else {
-                    Modifier
+                //
+                // Solved (user request): same tap-anywhere idea moves on to
+                // the next puzzle instead of auto-advancing on a timer — see
+                // PuzzleViewModel.onSolvedTapped. Withheld while a failed
+                // background fetch is showing its own Retry button below, so
+                // that button (not a stray tap elsewhere) is what retries.
+                when {
+                    state.feedback == MoveFeedback.WRONG -> Modifier.clickable(onClick = viewModel::clearWrongFeedback)
+                    state.feedback == MoveFeedback.SOLVED && !(state.awaitingNextPuzzle && state.nextPuzzleError) ->
+                        Modifier.clickable(onClick = viewModel::onSolvedTapped)
+                    else -> Modifier
                 },
             ),
     ) {
@@ -127,8 +134,14 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             // A wrong move now dims the board and waits for an explicit Retry
             // tap instead of auto-clearing after a timer (user request) — the
             // wrong move is already undone underneath, so tapping Retry is
-            // exactly "go back to where I was, try again".
-            val dimmed = state.isLoading || state.error != null || state.feedback == MoveFeedback.WRONG
+            // exactly "go back to where I was, try again". A solved puzzle
+            // dims the same way (user request) — it now waits for a tap to
+            // move on instead of auto-advancing, and dimming both disables
+            // Board()'s own drag/zoom gesture handling (so a tap anywhere
+            // reaches the root Box's onSolvedTapped above instead of being
+            // consumed by the board) and reads as "not interactive right now".
+            val dimmed = state.isLoading || state.error != null || state.feedback == MoveFeedback.WRONG ||
+                state.feedback == MoveFeedback.SOLVED
 
             TurnLabel(
                 state = state,
@@ -160,7 +173,13 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 11.dp),
             )
 
-            if (state.isLoading) {
+            // Solved-and-waiting (user request): a tap already asked to move
+            // on (awaitingNextPuzzle) but the background-fetched next puzzle
+            // isn't ready yet — same spinner as the initial load, shown over
+            // the (now dimmed) solved board instead of replacing it.
+            val awaitingNextLoading = state.feedback == MoveFeedback.SOLVED &&
+                state.awaitingNextPuzzle && !state.nextPuzzleError
+            if (state.isLoading || awaitingNextLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
 
@@ -176,10 +195,15 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             // standard Button's floor.
             // A wrong move deliberately does *not* get this button (user
             // request) — just the top "Retry" text plus the tap-anywhere
-            // handler on the root Box above.
-            if (state.error != null) {
+            // handler on the root Box above. A solved puzzle whose
+            // background next-puzzle fetch failed *does* get it (user
+            // request) — same reasoning as the initial-load failure, just
+            // retrying the background fetch instead of the whole screen.
+            val awaitingNextError = state.feedback == MoveFeedback.SOLVED &&
+                state.awaitingNextPuzzle && state.nextPuzzleError
+            if (state.error != null || awaitingNextError) {
                 CompactButton(
-                    onClick = viewModel::loadNextPuzzle,
+                    onClick = if (state.error != null) viewModel::loadNextPuzzle else viewModel::retryNextPuzzle,
                     modifier = Modifier.align(Alignment.Center),
                     shape = RoundedCornerShape(Dimens.ButtonCornerRadius),
                 ) {
@@ -203,6 +227,12 @@ private fun TurnLabel(state: PuzzleUiState, modifier: Modifier = Modifier) {
         }
         state.feedback == MoveFeedback.WRONG -> {
             text = "Retry"; color = ErrorColor
+        }
+        state.feedback == MoveFeedback.SOLVED && state.awaitingNextPuzzle && state.nextPuzzleError -> {
+            text = "Retry"; color = ErrorColor
+        }
+        state.feedback == MoveFeedback.SOLVED && state.awaitingNextPuzzle -> {
+            text = "Loading…"; color = TextSecondary
         }
         state.feedback == MoveFeedback.SOLVED -> {
             text = "Correct"; color = Success
