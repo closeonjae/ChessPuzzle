@@ -336,12 +336,18 @@ private fun Board(
     boardSide: Dp,
     onSquareTapped: (Square) -> Unit,
 ) {
-    // Flip to the solver's own perspective when it's Black to move (own
+    // Flip to the solver's own perspective when the solver is Black (own
     // pieces nearest the bottom) — user request. Only the *display*
     // position is mirrored: which true row/col is drawn at each grid
     // cell. isLight below stays keyed off the true (unflipped) row/col,
     // since a square's own color never changes with viewing angle.
-    val flipped = engine?.sideToMove == Side.BLACK
+    //
+    // Keyed off PuzzleEngine.solverSide (fixed for the whole puzzle), not
+    // the live sideToMove — sideToMove flips to the opponent the instant
+    // the puzzle's final move is played, which used to spin the board 180°
+    // right as it was solved (real-emulator finding) even though nothing
+    // else about the board changes at that point.
+    val flipped = engine?.solverSide == Side.BLACK
     // Legal destinations of the selected piece, keyed to whether they
     // capture (an opponent piece is there) or not — user request: an empty
     // legal square gets a small dot, a capturable square gets a ring

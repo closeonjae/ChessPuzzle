@@ -91,6 +91,19 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
         }
     }
 
+    /**
+     * The side the solver is playing — fixed for this puzzle's whole
+     * lifetime, captured once the PGN replay above reaches the puzzle's
+     * actual starting position. Real-emulator finding: PuzzleScreen's board
+     * used to flip orientation off the *live* [sideToMove] instead, which
+     * flips the instant the puzzle's final move is played (solving it hands
+     * the turn to the opponent) — the board would visibly spin 180° right
+     * as "Correct" appeared, with nothing left to flip back for since no
+     * more moves follow. Use this instead of [sideToMove] anywhere the
+     * board's *orientation* is decided.
+     */
+    val solverSide: Side = board.sideToMove
+
     val sideToMove: Side get() = board.sideToMove
 
     /**
