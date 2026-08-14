@@ -96,6 +96,11 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(PuzzleUiState())
     val uiState: StateFlow<PuzzleUiState> = _uiState.asStateFlow()
 
+    /** A solve whose report POST failed, held for [retryNextPuzzle] to re-send — see [reportSolvedAndPrefetchNext]. */
+    private data class PendingSolve(val puzzleId: String, val win: Boolean)
+
+    private var unreportedSolve: PendingSolve? = null
+
     init {
         loadNextPuzzle()
     }
@@ -196,12 +201,20 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                             "next-puzzle fetch returned the same puzzle ($currentId) again — retrying",
                         )
                         fetchNextPuzzleInBackground(retriesLeft - 1)
-                        return@onSuccess
+                    } else {
+                        // Never show the just-solved puzzle again (user
+                        // request — this used to fall through to "show it
+                        // anyway", which is exactly the reported bug of
+                        // re-solving the same puzzle). Surface the Retry
+                        // state instead: the solver stays on the loading/
+                        // Retry screen until a *different* puzzle arrives.
+                        Log.d(
+                            "PuzzleViewModel",
+                            "next-puzzle fetch still returned the same puzzle ($currentId) after retrying — showing Retry instead",
+                        )
+                        _uiState.update { it.copy(nextPuzzleError = true) }
                     }
-                    Log.d(
-                        "PuzzleViewModel",
-                        "next-puzzle fetch still returned the same puzzle ($currentId) after retrying — showing it anyway",
-                    )
+                    return@onSuccess
                 }
                 _uiState.update { it.copy(nextEngine = engine, nextPuzzleError = false) }
                 // The solver already tapped once and is waiting on this
@@ -225,10 +238,21 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         viewModelScope.launch { applyNextPuzzleResult(fetchPuzzle(), retriesLeft) }
     }
 
-    /** Retry button on a solved puzzle whose background next-puzzle fetch failed (user request). */
+    /**
+     * Retry button on a solved puzzle whose background solve-report/next-
+     * puzzle step failed (user request). If the solve report itself is what
+     * failed ([unreportedSolve]), retry re-sends *that* first — a plain
+     * next-puzzle GET before the solve is recorded server-side would just
+     * hand back the same puzzle again (see [reportSolvedAndPrefetchNext]).
+     */
     fun retryNextPuzzle() {
         _uiState.update { it.copy(nextPuzzleError = false) }
-        fetchNextPuzzleInBackground()
+        val pending = unreportedSolve
+        if (pending != null) {
+            reportSolvedAndPrefetchNext(pending.puzzleId, pending.win)
+        } else {
+            fetchNextPuzzleInBackground()
+        }
     }
 
     /**
@@ -431,30 +455,42 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
      * eagerly) could race ahead of the server recording the solve and get
      * handed back the very puzzle just solved, still marked unsolved (user
      * report: solving a puzzle rolled back into solving the same one
-     * again). [fetchNextPuzzleInBackground] is still the fallback for when
-     * nothing comes back bundled — the debug fixture, or a solve report
-     * that itself failed.
+     * again). [fetchNextPuzzleInBackground] is still the fallback when a
+     * *successful* report comes back with nothing bundled (the debug
+     * fixture). A *failed* report deliberately fetches nothing anymore
+     * (user request — 같은 문제를 다시 푸는 일이 없도록): with the solve
+     * unrecorded server-side, any next-puzzle GET would hand back this
+     * very puzzle still marked unsolved — the remaining way the
+     * repeated-puzzle bug could still happen. Instead the solve is held
+     * in [unreportedSolve] and the screen goes to the Retry state, where
+     * [retryNextPuzzle] re-sends the report itself first.
      */
     private fun reportSolvedAndPrefetchNext(puzzleId: String, win: Boolean) {
         viewModelScope.launch {
-            val result = repository.reportSolved(puzzleId, win = win)
-            result.onSuccess { response ->
-                val diff = response.rounds.firstOrNull()?.ratingDiff
-                // win=false here means a hint was checked and/or a wrong
-                // move was made this attempt (see handleOutcome) — kept as
-                // a log, not just a comment, since it's otherwise invisible
-                // whether a given solve was actually reported as a loss.
-                Log.d("PuzzleViewModel", "reportSolved(win=$win) -> ratingDiff=$diff")
-                response.glicko?.let { glicko ->
-                    _uiState.update { it.copy(rating = glicko.rating.toInt(), ratingDelta = diff) }
+            repository.reportSolved(puzzleId, win = win)
+                .onSuccess { response ->
+                    unreportedSolve = null
+                    val diff = response.rounds.firstOrNull()?.ratingDiff
+                    // win=false here means a hint was checked and/or a wrong
+                    // move was made this attempt (see handleOutcome) — kept as
+                    // a log, not just a comment, since it's otherwise invisible
+                    // whether a given solve was actually reported as a loss.
+                    Log.d("PuzzleViewModel", "reportSolved(win=$win) -> ratingDiff=$diff")
+                    response.glicko?.let { glicko ->
+                        _uiState.update { it.copy(rating = glicko.rating.toInt(), ratingDelta = diff) }
+                    }
+                    val bundledNext = response.puzzles.firstOrNull()
+                    if (bundledNext != null) {
+                        applyNextPuzzleResult(runCatching { buildEngine(bundledNext) })
+                    } else {
+                        fetchNextPuzzleInBackground()
+                    }
                 }
-            }
-            val bundledNext = result.getOrNull()?.puzzles?.firstOrNull()
-            if (bundledNext != null) {
-                applyNextPuzzleResult(runCatching { buildEngine(bundledNext) })
-            } else {
-                fetchNextPuzzleInBackground()
-            }
+                .onFailure { e ->
+                    Log.d("PuzzleViewModel", "reportSolved($puzzleId) failed (${e.message}) — holding solve for retry")
+                    unreportedSolve = PendingSolve(puzzleId, win)
+                    _uiState.update { it.copy(nextPuzzleError = true) }
+                }
         }
     }
 

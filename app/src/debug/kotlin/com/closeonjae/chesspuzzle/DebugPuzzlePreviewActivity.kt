@@ -56,6 +56,12 @@ private class FakePuzzleRepository(
     tokenStore: TokenStore,
 ) : PuzzleRepository(api, tokenStore) {
 
+    // Fresh id per call: PuzzleViewModel now refuses to re-show the puzzle
+    // currently on screen (production fix for the repeated-puzzle bug), and
+    // this fixture is the one legitimate "same puzzle again" source — a new
+    // id each time keeps the preview advancing through the same position.
+    private var serial = 0
+
     override suspend fun nextPuzzle(): Result<PuzzleAndGame> = Result.success(
         PuzzleAndGame(
             game = Game(
@@ -70,7 +76,7 @@ private class FakePuzzleRepository(
                 clock = "5+1",
             ),
             puzzle = Puzzle(
-                id = "debugPreview",
+                id = "debugPreview${serial++}",
                 rating = 1632,
                 plays = 0,
                 solution = listOf("a7a6", "b5a4", "g8f6"),

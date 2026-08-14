@@ -42,8 +42,10 @@ open class PuzzleRepository(
     // already recorded — and cuts the solved→next-puzzle path from two
     // network round trips down to one (user report: next-puzzle loading
     // was too slow). PuzzleViewModel falls back to a separate GET only if
-    // this doesn't come back with one (e.g. the debug fixture, or a solve
-    // that itself failed).
+    // a *successful* report comes back without one (the debug fixture); a
+    // failed report holds the solve for a Retry-driven re-report instead of
+    // fetching anything — an unrecorded solve is exactly what makes a GET
+    // return the same puzzle again.
     open suspend fun reportSolved(puzzleId: String, win: Boolean): Result<PuzzleBatchSolveResponse> = runCatching {
         val token = requireToken()
         withContext(Dispatchers.IO) {
