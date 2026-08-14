@@ -45,19 +45,18 @@ sealed interface MoveOutcome {
  * starting with the SOLVER at index 0 — the position at `initialPly` is
  * already the solver's turn, nothing is auto-played on load.
  *
- * (This exact assumption was flipped once already and had to be reverted —
- * DESIGN.md 5절 "힌트" 항목의 버그 수정 기록 참고. A real-device screenshot showed
- * the hint button pointing at the opponent's own piece, which looked
- * exactly like Lichess's puzzle *database* convention where solution[0] is
- * an opponent setup move (database.lichess.org/#puzzles). Auto-playing
- * solution[0] to match that "fixed" the hint but broke real puzzle loading
- * almost entirely — most fetches started failing right after construction,
- * surfacing as constant "Connection Lost". Whatever the real explanation
- * is (this REST API's game.pgn+initialPly+solution shape apparently
- * doesn't follow the CSV database export's convention, or something else
- * was off), it's reverted here pending an actual raw API response to
- * confirm against, rather than guessing a second time and risking another
- * regression.)
+ * The real root cause of the long-running hint-color bug (DESIGN.md 5절
+ * "힌트" 항목의 전체 기록): `initialPly` is **1-indexed as "the ply about to
+ * be played next"**, not "how many plies to replay". Replaying exactly
+ * `initialPly` SAN tokens (the original code, and the CSV-database-
+ * convention guess that replaced it and had to be reverted) lands one ply
+ * *too far* — proven by connecting to a real device (`adb pair`/`connect`)
+ * and reading a real puzzle's logged `game.pgn`/`initialPly`/`solution`
+ * (`PuzzleViewModel`'s `Log.d`) straight into python-chess: replaying
+ * `initialPly` tokens left the wrong side to move and `solution[0]`
+ * illegal from that position; replaying `initialPly - 1` tokens gave the
+ * right side to move with `solution[0]` legal. Confirmed the same way
+ * against the official `/next` example puzzle in the API docs, too.
  */
 class PuzzleEngine(private val puzzle: PuzzleData) {
 
@@ -70,10 +69,12 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
 
     init {
         // game.pgn is space-separated SAN tokens with no move numbers
-        // (RESEARCH.md 3절 example response) — replay up to initialPly to
-        // reach the puzzle's starting position.
+        // (RESEARCH.md 3절 example response) — replay initialPly - 1 of them
+        // to reach the puzzle's starting position (see class doc above for
+        // why it's initialPly - 1 and not initialPly).
         val sanMoves = puzzle.gamePgn.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        for (i in 0 until puzzle.initialPly.coerceAtMost(sanMoves.size)) {
+        val plyCount = (puzzle.initialPly - 1).coerceIn(0, sanMoves.size)
+        for (i in 0 until plyCount) {
             check(board.doMove(sanMoves[i])) { "Failed to replay '${sanMoves[i]}' at ply $i for puzzle ${puzzle.id}" }
         }
     }
