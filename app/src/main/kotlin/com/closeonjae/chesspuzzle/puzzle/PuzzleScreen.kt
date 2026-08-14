@@ -101,7 +101,23 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
 
     val launchMoveInput = rememberMoveInputLauncher { text -> text?.let(viewModel::onSanEntered) }
 
-    Box(modifier = Modifier.fillMaxSize().background(Background)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Background)
+            .then(
+                // Wrong move (user request): no button, just tap anywhere on
+                // screen to restore the board — the wrong move itself was
+                // already undone underneath, this just dismisses the dim/
+                // "Retry" state. Only active while that state is showing, so
+                // it doesn't steal normal board taps otherwise.
+                if (state.feedback == MoveFeedback.WRONG) {
+                    Modifier.clickable(onClick = viewModel::clearWrongFeedback)
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val diameter = minOf(maxWidth, maxHeight)
             val boardSide = diameter * Dimens.BoardInsetRatio
@@ -153,12 +169,12 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
             // CompactButton variant instead — its own default height/
             // padding are built to be shorter, rather than fighting the
             // standard Button's floor.
-            // Same button/state now also covers a wrong move (user request)
-            // — it dismisses the WRONG feedback instead of loading a new
-            // puzzle, since the wrong move itself was already undone.
-            if (state.error != null || state.feedback == MoveFeedback.WRONG) {
+            // A wrong move deliberately does *not* get this button (user
+            // request) — just the top "Retry" text plus the tap-anywhere
+            // handler on the root Box above.
+            if (state.error != null) {
                 CompactButton(
-                    onClick = if (state.error != null) viewModel::loadNextPuzzle else viewModel::clearWrongFeedback,
+                    onClick = viewModel::loadNextPuzzle,
                     modifier = Modifier.align(Alignment.Center),
                     shape = RoundedCornerShape(Dimens.ButtonCornerRadius),
                 ) {
@@ -181,7 +197,7 @@ private fun TurnLabel(state: PuzzleUiState, modifier: Modifier = Modifier) {
             text = "Loading…"; color = TextSecondary
         }
         state.feedback == MoveFeedback.WRONG -> {
-            text = "Wrong move"; color = ErrorColor
+            text = "Retry"; color = ErrorColor
         }
         state.feedback == MoveFeedback.SOLVED -> {
             text = "Correct"; color = Success

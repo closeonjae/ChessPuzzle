@@ -155,7 +155,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         }
     }
 
-    /** Dismisses a WRONG state back to the normal turn label — the wrong move was already undone, this is just "let me try again" (user request: an explicit Retry tap, not an auto-timeout). */
+    /** Dismisses a WRONG state back to the normal turn label — the wrong move was already undone, this is just "let me try again" (user request: an explicit tap-anywhere-on-screen, not an auto-timeout). */
     fun clearWrongFeedback() {
         _uiState.update { if (it.feedback == MoveFeedback.WRONG) it.copy(feedback = MoveFeedback.NONE) else it }
     }
