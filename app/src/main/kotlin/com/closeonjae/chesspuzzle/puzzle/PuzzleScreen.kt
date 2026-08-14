@@ -159,6 +159,7 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
                 hintSquare = state.hintSquare,
                 animatedMove = state.animatedMove,
                 wrongAttempt = state.wrongAttempt,
+                pendingOpponentReply = state.pendingOpponentReply,
                 dimmed = dimmed,
                 boardSide = boardSide,
                 onSquareTapped = viewModel::onSquareTapped,
@@ -295,6 +296,7 @@ private fun BoardRow(
     hintSquare: Square?,
     animatedMove: Move?,
     wrongAttempt: Move?,
+    pendingOpponentReply: Move?,
     dimmed: Boolean,
     boardSide: Dp,
     onSquareTapped: (Square) -> Unit,
@@ -305,7 +307,7 @@ private fun BoardRow(
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         HintTab(boardSide, onHintTapped)
         Spacer(Modifier.width(Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart))
-        Board(engine, selected, hintSquare, animatedMove, wrongAttempt, dimmed, boardSide, onSquareTapped)
+        Board(engine, selected, hintSquare, animatedMove, wrongAttempt, pendingOpponentReply, dimmed, boardSide, onSquareTapped)
         Spacer(Modifier.width(Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart))
         KeyboardTab(boardSide, onKeyboardTapped)
     }
@@ -332,6 +334,7 @@ private fun Board(
     hintSquare: Square?,
     animatedMove: Move?,
     wrongAttempt: Move?,
+    pendingOpponentReply: Move?,
     dimmed: Boolean,
     boardSide: Dp,
     onSquareTapped: (Square) -> Unit,
@@ -656,11 +659,13 @@ private fun Board(
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
-                            // Hidden at its origin while dragged, and at both ends of an
-                            // in-flight move animation (user request) — the floating
-                            // overlay below is drawing that same piece there instead.
+                            // Hidden at its origin while dragged, at both ends of an
+                            // in-flight move animation, and at both ends of a still-
+                            // pending opponent reply (user request) — the floating
+                            // overlays below are drawing that same piece there instead.
                             if (piece != Piece.NONE && square != dragOriginSquare &&
-                                square != pieceAnim?.from && square != pieceAnim?.to
+                                square != pieceAnim?.from && square != pieceAnim?.to &&
+                                square != pendingOpponentReply?.from && square != pendingOpponentReply?.to
                             ) {
                                 PieceIcon(
                                     pieceType = piece.pieceType,
@@ -712,6 +717,28 @@ private fun Board(
             )
         }
 
+        // Floating piece for the opponent's reply while it's still pending
+        // reveal (user request) — stationary at its *origin* square (no
+        // animation, no tween) even though `engine.board` already has it
+        // at its destination internally (PuzzleEngine plays both moves
+        // synchronously). It only starts actually sliding once
+        // PuzzleViewModel's delayed pause elapses and this becomes a
+        // genuine `animatedMove`/`pieceAnim` above — see
+        // PuzzleUiState.pendingOpponentReply.
+        pendingOpponentReply?.let { reply ->
+            val piece = engine?.board?.getPiece(reply.to) ?: Piece.NONE
+            if (piece != Piece.NONE) {
+                val pieceSizePx = cellSizePx * 0.82f
+                val topLeftPx = pixelCenterOf(reply.from) - Offset(pieceSizePx / 2f, pieceSizePx / 2f)
+                PieceIcon(
+                    pieceType = piece.pieceType,
+                    isWhite = piece.pieceSide == Side.WHITE,
+                    modifier = Modifier
+                        .size(with(density) { pieceSizePx.toDp() })
+                        .offset { IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt()) },
+                )
+            }
+        }
     }
 }
 

@@ -44,6 +44,18 @@ data class PuzzleUiState(
      * record of where the piece was "trying" to go.
      */
     val wrongAttempt: Move? = null,
+    /**
+     * The opponent's auto-reply, from the moment the solver's own correct
+     * move is played until [OPPONENT_REPLY_PAUSE_MS] later, when it's
+     * actually revealed via [animatedMove] (user request — a paused beat
+     * before it moves). [PuzzleEngine] already plays this on `engine.board`
+     * synchronously, well before that reveal — PuzzleScreen's Board() uses
+     * this to keep rendering the piece stationary at its *origin* square
+     * during the pause, rather than reading `engine.board` unsuppressed and
+     * showing it having already arrived (real bug: 상대 기물이 순간적으로 미리
+     * 움직였다가 다시 순간적으로 돌아가서 애니메이션이 재생됨).
+     */
+    val pendingOpponentReply: Move? = null,
     /** How many times the hint button has been checked on this puzzle (user request — counted on the first tap of each look, whether or not it's then used to actually play the move). Resets to 0 on a new puzzle. */
     val hintUsedCount: Int = 0,
     /** Whether any wrong move has been made on this puzzle attempt (user request — resets to false on a new puzzle). Both this and [hintUsedCount] feed into whether the solve gets reported to Lichess as a win (DESIGN.md 5절). */
@@ -85,6 +97,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 hintSquare = null,
                 animatedMove = null,
                 wrongAttempt = null,
+                pendingOpponentReply = null,
                 hintUsedCount = 0,
                 hadWrongAttempt = false,
                 feedback = MoveFeedback.NONE,
@@ -202,6 +215,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 hintSquare = null,
                 animatedMove = null,
                 wrongAttempt = null,
+                pendingOpponentReply = null,
                 hintUsedCount = 0,
                 hadWrongAttempt = false,
                 feedback = MoveFeedback.NONE,
@@ -311,6 +325,15 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                         hintSquare = null,
                         feedback = MoveFeedback.NONE,
                         animatedMove = outcome.solverMove,
+                        // Set synchronously, in this same update, even
+                        // though it isn't *revealed* (animatedMove) until
+                        // the delay below — PuzzleScreen's Board() needs to
+                        // know right away which squares belong to a still-
+                        // pending reply, so it can keep rendering that piece
+                        // at its origin instead of reading engine.board
+                        // (already mutated) and showing it having arrived
+                        // early (see PuzzleUiState.pendingOpponentReply).
+                        pendingOpponentReply = outcome.opponentReply,
                     )
                 }
                 // The opponent's reply already happened on the board by now
@@ -322,7 +345,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 outcome.opponentReply?.let { reply ->
                     viewModelScope.launch {
                         delay(MOVE_ANIMATION_MS + OPPONENT_REPLY_PAUSE_MS)
-                        _uiState.update { it.copy(animatedMove = reply) }
+                        _uiState.update { it.copy(animatedMove = reply, pendingOpponentReply = null) }
                     }
                 }
             }
