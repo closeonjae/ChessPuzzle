@@ -229,8 +229,11 @@ private fun TurnLabel(state: PuzzleUiState, modifier: Modifier = Modifier) {
         state.feedback == MoveFeedback.WRONG -> {
             text = "Retry"; color = ErrorColor
         }
+        // Matches the initial-load failure's top label (user request) — this
+        // state also shows the centered Retry *button*, so the label reports
+        // the cause ("Connection Lost") instead of repeating the action.
         state.feedback == MoveFeedback.SOLVED && state.awaitingNextPuzzle && state.nextPuzzleError -> {
-            text = "Retry"; color = ErrorColor
+            text = "Connection Lost"; color = ErrorColor
         }
         state.feedback == MoveFeedback.SOLVED && state.awaitingNextPuzzle -> {
             text = "Loading…"; color = TextSecondary
