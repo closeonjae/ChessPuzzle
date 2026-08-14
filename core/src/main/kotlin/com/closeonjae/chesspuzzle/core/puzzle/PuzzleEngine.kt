@@ -5,6 +5,7 @@ import com.github.bhlangonijr.chesslib.Board
 import com.github.bhlangonijr.chesslib.Side
 import com.github.bhlangonijr.chesslib.Square
 import com.github.bhlangonijr.chesslib.move.Move
+import com.github.bhlangonijr.chesslib.move.MoveConversionException
 
 /** The minimal puzzle shape [PuzzleEngine] needs, decoupled from the API response type. */
 data class PuzzleData(
@@ -90,8 +91,24 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
     /** The solver's next expected move, for the hint button (DESIGN.md 5절) — doesn't touch the board. */
     val hintMove: Move? get() = if (isSolved) null else Move(puzzle.solution[solutionIndex], board.sideToMove)
 
-    /** Attempt the solver's move given as SAN (e.g. "Nc3") — the keyboard-entry flow (DESIGN.md 5절). */
-    fun attemptSan(san: String): MoveOutcome = attempt { board.doMove(san) }
+    /**
+     * Attempt the solver's move given as SAN (e.g. "Nc3") — the keyboard-
+     * entry flow (DESIGN.md 5절).
+     *
+     * Real-device crash: unlike the coordinate path, `board.doMove(String)`
+     * doesn't just return `false` on input it can't make sense of — it
+     * *throws* `MoveConversionException` (confirmed from an actual crash
+     * log: typing "Qe2" when no queen could legally reach e2 crashed the
+     * whole app). Caught here and treated the same as any other
+     * unplayable input.
+     */
+    fun attemptSan(san: String): MoveOutcome = attempt {
+        try {
+            board.doMove(san)
+        } catch (e: MoveConversionException) {
+            false
+        }
+    }
 
     /** Attempt the solver's move given as a tapped from/to square pair. */
     fun attemptCoordinates(from: Square, to: Square): MoveOutcome {

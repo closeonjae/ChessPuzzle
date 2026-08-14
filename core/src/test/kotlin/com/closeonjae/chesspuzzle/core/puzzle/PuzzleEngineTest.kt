@@ -64,6 +64,23 @@ class PuzzleEngineTest {
     }
 
     /**
+     * Regression: a real-device crash log showed `board.doMove(String)`
+     * *throwing* `MoveConversionException` (not returning false, unlike the
+     * coordinate path) for SAN it can't resolve to a legal move — e.g. "Qe2"
+     * when no queen can reach e2. Uncaught, this took down the whole app
+     * from the keyboard-entry flow. attemptSan now catches it and reports
+     * IllegalMove like any other unplayable input.
+     */
+    @Test
+    fun `unparseable SAN input is illegal, not a crash`() {
+        val engine = foolsMate()
+        val fenBefore = engine.board.fen
+        val outcome = engine.attemptSan("Qe2")
+        assertIs<MoveOutcome.IllegalMove>(outcome)
+        assertEquals(fenBefore, engine.board.fen)
+    }
+
+    /**
      * Regression: doMove(Move, fullValidation = true) alone accepted a
      * knight moved straight from c6 to c5 (not even a knight-shaped move,
      * just an empty square) and scored it WrongMove instead of rejecting
