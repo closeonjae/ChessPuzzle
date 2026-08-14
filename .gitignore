@@ -1,6 +1,7 @@
 .claude/settings.local.json
 
 # Android / Gradle
+*.apk
 *.iml
 .gradle/
 local.properties
