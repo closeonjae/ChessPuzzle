@@ -24,16 +24,28 @@ fun PuzzleAndGame.toPuzzleData(): PuzzleData = PuzzleData(
     rating = puzzle.rating,
 )
 
-/** Result of one attempted move (RESEARCH.md 3/6/8절, PLAN.md 5절). */
+/**
+ * Result of one attempted move (RESEARCH.md 3/6/8절, PLAN.md 5절).
+ * [Correct]/[Solved]/[WrongMove] all carry the actual [Move] played — the
+ * UI uses these to animate the piece sliding between squares (user
+ * request) instead of it just appearing at its new square.
+ */
 sealed interface MoveOutcome {
-    /** Correct so far; [opponentReply] is the auto-played reply, if the puzzle isn't solved yet. */
-    data class Correct(val opponentReply: Move?) : MoveOutcome
+    /** Correct so far; [solverMove] is what was just played, [opponentReply] is the auto-played reply, if the puzzle isn't solved yet. */
+    data class Correct(val solverMove: Move, val opponentReply: Move?) : MoveOutcome
 
-    /** The puzzle's final move — no opponent reply follows. */
-    object Solved : MoveOutcome
+    /** The puzzle's final move — no opponent reply follows. [solverMove] is null only for the no-op "already solved" case. */
+    data class Solved(val solverMove: Move? = null) : MoveOutcome
 
-    /** A legal chess move, but not the puzzle's solution move. The board is left unchanged (move is undone). */
-    object WrongMove : MoveOutcome
+    /**
+     * A legal chess move, but not the puzzle's solution move. [attempted]
+     * is what was tried — the board itself is left unchanged (the move is
+     * undone internally before this is returned), but the UI still
+     * animates the piece traveling to [attempted]'s destination and then
+     * rolling back (user request), using this square pair rather than the
+     * (already-reverted) board state.
+     */
+    data class WrongMove(val attempted: Move) : MoveOutcome
 
     /** Not a legal move / unparseable input — the board is left unchanged. */
     object IllegalMove : MoveOutcome
@@ -113,7 +125,7 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
 
     /** Attempt the solver's move given as a tapped from/to square pair. */
     fun attemptCoordinates(from: Square, to: Square): MoveOutcome {
-        if (isSolved) return MoveOutcome.Solved
+        if (isSolved) return MoveOutcome.Solved()
         // doMove(Move, fullValidation = true) turned out to *still* not
         // fully validate a raw coordinate pair — confirmed empirically that
         // it happily played e.g. a knight from c6 straight to c5 (not even
@@ -129,18 +141,18 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
     }
 
     private inline fun attempt(playOnBoard: () -> Boolean): MoveOutcome {
-        if (isSolved) return MoveOutcome.Solved
+        if (isSolved) return MoveOutcome.Solved()
         val expectedUci = puzzle.solution[solutionIndex]
         if (!playOnBoard()) return MoveOutcome.IllegalMove
 
         val played = board.backup.last().move
         if (played.toString() != expectedUci) {
             board.undoMove()
-            return MoveOutcome.WrongMove
+            return MoveOutcome.WrongMove(played)
         }
         solutionIndex++
         val opponentReply = playOpponentReplyIfAny()
-        return if (isSolved) MoveOutcome.Solved else MoveOutcome.Correct(opponentReply)
+        return if (isSolved) MoveOutcome.Solved(played) else MoveOutcome.Correct(played, opponentReply)
     }
 
     /** Auto-plays the opponent's forced reply, if the solution has one left. */

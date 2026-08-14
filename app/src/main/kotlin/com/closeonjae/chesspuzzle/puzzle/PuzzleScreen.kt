@@ -1,5 +1,8 @@
 package com.closeonjae.chesspuzzle.puzzle
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -80,6 +84,7 @@ import com.closeonjae.chesspuzzle.ui.theme.TextSecondary
 import com.github.bhlangonijr.chesslib.Piece
 import com.github.bhlangonijr.chesslib.Side
 import com.github.bhlangonijr.chesslib.Square
+import com.github.bhlangonijr.chesslib.move.Move
 import kotlin.math.roundToInt
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -89,11 +94,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * keyboard-entry tab to its right — DESIGN.md 4/5절. The board itself
  * flips to the solver's own perspective when it's Black to move (own
  * pieces always nearest the bottom of the screen), same as most chess UIs.
- *
- * Deliberately deferred for this first buildable pass (documented, not
- * silently dropped): animated last-move-square highlighting. Cosmetic only
- * — the underlying state (selection, correct/wrong/solved feedback,
- * rating) is fully wired.
+ * Every move (the solver's own, the auto-played opponent reply, and even a
+ * rejected attempt before it rolls back) slides between squares rather
+ * than snapping instantly (user request) — see `Board()`'s `pieceAnim`.
  */
 @Composable
 fun PuzzleScreen(viewModel: PuzzleViewModel) {
@@ -141,6 +144,8 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
                 engine = state.engine,
                 selected = state.selectedSquare,
                 hintSquare = state.hintSquare,
+                animatedMove = state.animatedMove,
+                wrongAttempt = state.wrongAttempt,
                 dimmed = dimmed,
                 boardSide = boardSide,
                 onSquareTapped = viewModel::onSquareTapped,
@@ -258,6 +263,8 @@ private fun BoardRow(
     engine: PuzzleEngine?,
     selected: Square?,
     hintSquare: Square?,
+    animatedMove: Move?,
+    wrongAttempt: Move?,
     dimmed: Boolean,
     boardSide: Dp,
     onSquareTapped: (Square) -> Unit,
@@ -268,7 +275,7 @@ private fun BoardRow(
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         HintTab(boardSide, onHintTapped)
         Spacer(Modifier.width(Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart))
-        Board(engine, selected, hintSquare, dimmed, boardSide, onSquareTapped)
+        Board(engine, selected, hintSquare, animatedMove, wrongAttempt, dimmed, boardSide, onSquareTapped)
         Spacer(Modifier.width(Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart))
         KeyboardTab(boardSide, onKeyboardTapped)
     }
@@ -285,11 +292,16 @@ private const val ZOOM_SCALE = 2.2f
  * Later dialed back down a step ("감도 조금 줄여줘") once 3f felt overshooty. */
 private const val ZOOM_PAN_SENSITIVITY = 2f
 
+/** One piece currently sliding between two squares (user request) — either a just-played move (forward) or a rejected move rolling back to where it came from. */
+private data class PieceAnimation(val piece: Piece, val from: Square, val to: Square)
+
 @Composable
 private fun Board(
     engine: PuzzleEngine?,
     selected: Square?,
     hintSquare: Square?,
+    animatedMove: Move?,
+    wrongAttempt: Move?,
     dimmed: Boolean,
     boardSide: Dp,
     onSquareTapped: (Square) -> Unit,
@@ -331,12 +343,74 @@ private fun Board(
         val piece = engine?.board?.getPiece(square) ?: return false
         return piece != Piece.NONE && piece.pieceSide == engine.sideToMove
     }
+    fun pixelCenterOf(square: Square): Offset {
+        val (row, col) = rowColOf(square)
+        val displayRow = if (flipped) 7 - row else row
+        val displayCol = if (flipped) 7 - col else col
+        return Offset((displayCol + 0.5f) * cellSizePx, (displayRow + 0.5f) * cellSizePx)
+    }
 
     // Drag-to-move state: the piece being dragged (if any) is skipped in its
     // origin cell below and drawn instead as a floating overlay that tracks
     // the raw finger offset from where the drag started.
     var dragOriginSquare by remember { mutableStateOf<Square?>(null) }
     var dragOffsetPx by remember { mutableStateOf(Offset.Zero) }
+    // Move animation (user request): a slide from one square to another,
+    // driving the floating overlay below. `pieceAnim` is what's currently
+    // showing (both its origin and destination cells hide their normal
+    // static piece render while this is non-null, so the overlay is the
+    // only thing drawing that piece). `justDraggedFrom` is set the instant
+    // a drag's own release triggers the move attempt, so that particular
+    // move doesn't get a redundant "snap back to origin, slide forward
+    // again" replay — the piece is already sitting at its destination from
+    // following the finger.
+    var pieceAnim by remember { mutableStateOf<PieceAnimation?>(null) }
+    val animatedOffset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    var justDraggedFrom by remember { mutableStateOf<Square?>(null) }
+    var lastWrongAttempt by remember { mutableStateOf<Move?>(null) }
+
+    LaunchedEffect(animatedMove) {
+        val move = animatedMove ?: return@LaunchedEffect
+        val piece = engine?.board?.getPiece(move.to)?.takeIf { it != Piece.NONE } ?: return@LaunchedEffect
+        pieceAnim = PieceAnimation(piece, move.from, move.to)
+        if (move.from == justDraggedFrom) {
+            animatedOffset.snapTo(pixelCenterOf(move.to))
+        } else {
+            animatedOffset.snapTo(pixelCenterOf(move.from))
+            animatedOffset.animateTo(pixelCenterOf(move.to), tween(MOVE_ANIMATION_MS.toInt()))
+        }
+        justDraggedFrom = null
+        pieceAnim = null
+    }
+    // Wrong move (user request): forward-animates to where it was actually
+    // attempted and *holds* there (feedback == WRONG keeps wrongAttempt
+    // non-null the whole time the board stays dimmed) rather than clearing
+    // pieceAnim like a normal move — PuzzleEngine already undid the move
+    // internally, so this overlay is the only place that (illegal)
+    // destination is ever shown. Going back to null (tap-anywhere
+    // dismissed it, PuzzleViewModel.clearWrongFeedback) plays the same
+    // slide in reverse using the last remembered attempt, then releases
+    // the suppressed squares back to normal static rendering.
+    LaunchedEffect(wrongAttempt) {
+        val move = wrongAttempt
+        if (move != null) {
+            lastWrongAttempt = move
+            val piece = engine?.board?.getPiece(move.from)?.takeIf { it != Piece.NONE } ?: return@LaunchedEffect
+            pieceAnim = PieceAnimation(piece, move.from, move.to)
+            if (move.from == justDraggedFrom) {
+                animatedOffset.snapTo(pixelCenterOf(move.to))
+            } else {
+                animatedOffset.snapTo(pixelCenterOf(move.from))
+                animatedOffset.animateTo(pixelCenterOf(move.to), tween(MOVE_ANIMATION_MS.toInt()))
+            }
+            justDraggedFrom = null
+        } else {
+            val move = lastWrongAttempt ?: return@LaunchedEffect
+            animatedOffset.animateTo(pixelCenterOf(move.from), tween(MOVE_ANIMATION_MS.toInt()))
+            pieceAnim = null
+            lastWrongAttempt = null
+        }
+    }
     // Long-press-to-zoom state (user request): zoomFocusPx is the
     // board-local point currently centered/magnified — it starts at the
     // press point and pans by the finger's screen movement scaled down by
@@ -406,6 +480,10 @@ private fun Board(
                                             val consumedChange = change
                                             consumedChange.consume()
                                             if (consumedChange.changedToUpIgnoreConsumed()) {
+                                                // The piece already visually traveled here by
+                                                // following the finger — the move-animation
+                                                // effects skip re-animating this particular leg.
+                                                justDraggedFrom = downSquare
                                                 onSquareTapped(squareFromOffset(consumedChange.position))
                                                 break
                                             }
@@ -518,7 +596,12 @@ private fun Board(
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (piece != Piece.NONE && square != dragOriginSquare) {
+                            // Hidden at its origin while dragged, and at both ends of an
+                            // in-flight move animation (user request) — the floating
+                            // overlay below is drawing that same piece there instead.
+                            if (piece != Piece.NONE && square != dragOriginSquare &&
+                                square != pieceAnim?.from && square != pieceAnim?.to
+                            ) {
                                 PieceIcon(
                                     pieceType = piece.pieceType,
                                     isWhite = piece.pieceSide == Side.WHITE,
@@ -551,6 +634,22 @@ private fun Board(
                         .offset { IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt()) },
                 )
             }
+        }
+
+        // Floating piece for a move animation in progress (user request) —
+        // same overlay technique as the drag piece above, but its position
+        // comes from animatedOffset (an Animatable tweening between two
+        // square centers) instead of raw finger movement.
+        pieceAnim?.let { anim ->
+            val pieceSizePx = cellSizePx * 0.82f
+            val topLeftPx = animatedOffset.value - Offset(pieceSizePx / 2f, pieceSizePx / 2f)
+            PieceIcon(
+                pieceType = anim.piece.pieceType,
+                isWhite = anim.piece.pieceSide == Side.WHITE,
+                modifier = Modifier
+                    .size(with(density) { pieceSizePx.toDp() })
+                    .offset { IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt()) },
+            )
         }
 
     }

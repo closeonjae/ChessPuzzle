@@ -9,6 +9,7 @@ import com.closeonjae.chesspuzzle.core.puzzle.toPuzzleData
 import com.closeonjae.chesspuzzle.data.PuzzleRepository
 import com.github.bhlangonijr.chesslib.Piece
 import com.github.bhlangonijr.chesslib.Square
+import com.github.bhlangonijr.chesslib.move.Move
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,9 @@ import kotlinx.coroutines.launch
 /** DESIGN.md 5절 states: default (turn label), WRONG (dims the board, waits for a Retry tap), SOLVED (brief success flash). */
 enum class MoveFeedback { NONE, WRONG, SOLVED }
 
+/** How long a piece takes to slide from one square to another (user request) — PuzzleScreen's Board() animates to this, and this file times the opponent-reply animation to start right after the solver's own finishes. */
+const val MOVE_ANIMATION_MS = 220L
+
 data class PuzzleUiState(
     val engine: PuzzleEngine? = null,
     val rating: Int? = null,
@@ -26,6 +30,16 @@ data class PuzzleUiState(
     val selectedSquare: Square? = null,
     /** Set by a first hint-button tap: the square whose piece the solver needs to move. */
     val hintSquare: Square? = null,
+    /** The move (solver's own, or the auto-played opponent reply) the board should currently be animating (user request) — not necessarily reflecting where the piece already sits in `engine.board`, which updates instantly. */
+    val animatedMove: Move? = null,
+    /**
+     * Non-null exactly while [feedback] is [MoveFeedback.WRONG]: the move
+     * that was actually attempted (user request — even a wrong move should
+     * visibly travel to its destination before rolling back). The board
+     * itself was already reverted by [PuzzleEngine], so this is the only
+     * record of where the piece was "trying" to go.
+     */
+    val wrongAttempt: Move? = null,
     val feedback: MoveFeedback = MoveFeedback.NONE,
     val isLoading: Boolean = true,
     val error: String? = null,
@@ -48,6 +62,8 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 error = null,
                 selectedSquare = null,
                 hintSquare = null,
+                animatedMove = null,
+                wrongAttempt = null,
                 feedback = MoveFeedback.NONE,
             )
         }
@@ -153,10 +169,30 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
     private fun handleOutcome(engine: PuzzleEngine, outcome: MoveOutcome) {
         when (outcome) {
             MoveOutcome.IllegalMove -> _uiState.update { it.copy(selectedSquare = null) }
-            MoveOutcome.WrongMove -> _uiState.update { it.copy(selectedSquare = null, feedback = MoveFeedback.WRONG) }
-            is MoveOutcome.Correct -> _uiState.update { it.copy(selectedSquare = null, feedback = MoveFeedback.NONE) }
-            MoveOutcome.Solved -> {
-                _uiState.update { it.copy(selectedSquare = null, feedback = MoveFeedback.SOLVED) }
+            is MoveOutcome.WrongMove -> _uiState.update {
+                it.copy(selectedSquare = null, feedback = MoveFeedback.WRONG, wrongAttempt = outcome.attempted)
+            }
+            is MoveOutcome.Correct -> {
+                _uiState.update {
+                    it.copy(selectedSquare = null, feedback = MoveFeedback.NONE, animatedMove = outcome.solverMove)
+                }
+                // The opponent's reply already happened on the board by now
+                // (PuzzleEngine plays both moves before returning) — delayed
+                // just long enough for the solver's own move to finish
+                // animating first, so the two don't overlap (user request:
+                // a real "I move, then they move" feel, not both at once).
+                outcome.opponentReply?.let { reply ->
+                    viewModelScope.launch {
+                        delay(MOVE_ANIMATION_MS)
+                        _uiState.update { it.copy(animatedMove = reply) }
+                    }
+                }
+            }
+            is MoveOutcome.Solved -> {
+                _uiState.update {
+                    val base = it.copy(selectedSquare = null, feedback = MoveFeedback.SOLVED)
+                    if (outcome.solverMove != null) base.copy(animatedMove = outcome.solverMove) else base
+                }
                 reportSolvedAndAdvance(engine.id)
             }
         }
@@ -176,9 +212,19 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         }
     }
 
-    /** Dismisses a WRONG state back to the normal turn label — the wrong move was already undone, this is just "let me try again" (user request: an explicit tap-anywhere-on-screen, not an auto-timeout). */
+    /**
+     * Dismisses a WRONG state back to the normal turn label — the wrong
+     * move was already undone, this is just "let me try again" (user
+     * request: an explicit tap-anywhere-on-screen, not an auto-timeout).
+     * Clearing [PuzzleUiState.wrongAttempt] here (rather than leaving it)
+     * is what Board() watches to know it's time to animate the piece
+     * rolling back (user request) — it remembers the last value locally
+     * before it goes null.
+     */
     fun clearWrongFeedback() {
-        _uiState.update { if (it.feedback == MoveFeedback.WRONG) it.copy(feedback = MoveFeedback.NONE) else it }
+        _uiState.update {
+            if (it.feedback == MoveFeedback.WRONG) it.copy(feedback = MoveFeedback.NONE, wrongAttempt = null) else it
+        }
     }
 
     private fun isOwnPiece(engine: PuzzleEngine, square: Square): Boolean {

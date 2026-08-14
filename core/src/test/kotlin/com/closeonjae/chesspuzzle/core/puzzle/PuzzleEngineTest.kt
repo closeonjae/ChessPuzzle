@@ -55,6 +55,10 @@ class PuzzleEngineTest {
         val fenBefore = engine.board.fen
         val outcome = engine.attemptSan("Nc6")
         assertIs<MoveOutcome.WrongMove>(outcome)
+        // Carries what was actually attempted (user request: animate the
+        // piece to here, then roll it back) even though the board itself
+        // is already reverted by the time this returns.
+        assertEquals("b8c6", outcome.attempted.toString())
         assertFalse(engine.isSolved)
         assertEquals(fenBefore, engine.board.fen)
     }
