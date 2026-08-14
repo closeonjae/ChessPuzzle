@@ -358,12 +358,19 @@ private fun Board(
     // hinted square deliberately does *not* get this treatment (user
     // request — it should read as a hint, not as if the solver tapped it
     // themselves); see the separate hintTint overlay below instead.
-    val legalDestinations: Map<Square, Boolean> = if (selected != null && engine != null) {
-        engine.board.legalMoves()
-            .filter { it.from == selected }
-            .associate { it.to to (engine.board.getPiece(it.to) != Piece.NONE) }
-    } else {
-        emptyMap()
+    // remember(engine, selected): legalMoves() is chesslib's full move
+    // generator — too heavy to rerun on every recomposition. The cache
+    // keys are sufficient because every path that mutates engine.board
+    // (correct move, wrong-move undo, hint play) also clears or changes
+    // selectedSquare in the same state update.
+    val legalDestinations: Map<Square, Boolean> = remember(engine, selected) {
+        if (selected != null && engine != null) {
+            engine.board.legalMoves()
+                .filter { it.from == selected }
+                .associate { it.to to (engine.board.getPiece(it.to) != Piece.NONE) }
+        } else {
+            emptyMap()
+        }
     }
     // Last-moved from/to squares (user request) — reused the color that
     // used to be hintTint's, once hint moved to red (see Color.kt).
@@ -487,17 +494,20 @@ private fun Board(
             modifier = Modifier
                 .size(boardSide)
                 .then(if (dimmed) Modifier.background(Background.copy(alpha = 0.65f)) else Modifier)
-                .then(
-                    zoomFocusPx?.let { focus ->
-                        Modifier.graphicsLayer(
-                            scaleX = ZOOM_SCALE,
-                            scaleY = ZOOM_SCALE,
-                            translationX = boardSidePx / 2f - focus.x * ZOOM_SCALE,
-                            translationY = boardSidePx / 2f - focus.y * ZOOM_SCALE,
-                            transformOrigin = TransformOrigin(0f, 0f),
-                        )
-                    } ?: Modifier,
-                )
+                // Lambda-based graphicsLayer so zoomFocusPx is read in the
+                // draw phase, not composition — each pan step then only
+                // re-issues this layer's transform instead of recomposing
+                // all 64 squares every frame while the finger moves.
+                .graphicsLayer {
+                    val focus = zoomFocusPx
+                    if (focus != null) {
+                        scaleX = ZOOM_SCALE
+                        scaleY = ZOOM_SCALE
+                        translationX = boardSidePx / 2f - focus.x * ZOOM_SCALE
+                        translationY = boardSidePx / 2f - focus.y * ZOOM_SCALE
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    }
+                }
                 .then(
                     if (dimmed) {
                         Modifier
@@ -685,18 +695,21 @@ private fun Board(
         dragOriginSquare?.let { origin ->
             val piece = engine?.board?.getPiece(origin) ?: Piece.NONE
             if (piece != Piece.NONE) {
-                val (row, col) = rowColOf(origin)
-                val displayRow = if (flipped) 7 - row else row
-                val displayCol = if (flipped) 7 - col else col
-                val centerPx = Offset((displayCol + 0.5f) * cellSizePx, (displayRow + 0.5f) * cellSizePx)
+                val centerPx = pixelCenterOf(origin)
                 val pieceSizePx = cellSizePx * 0.82f
-                val topLeftPx = centerPx + dragOffsetPx - Offset(pieceSizePx / 2f, pieceSizePx / 2f)
                 PieceIcon(
                     pieceType = piece.pieceType,
                     isWhite = piece.pieceSide == Side.WHITE,
                     modifier = Modifier
                         .size(with(density) { pieceSizePx.toDp() })
-                        .offset { IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt()) },
+                        // dragOffsetPx is read inside the offset lambda
+                        // (layout phase), so each finger move re-places only
+                        // this floating piece instead of recomposing the
+                        // whole board every frame.
+                        .offset {
+                            val topLeftPx = centerPx + dragOffsetPx - Offset(pieceSizePx / 2f, pieceSizePx / 2f)
+                            IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt())
+                        },
                 )
             }
         }
@@ -707,13 +720,18 @@ private fun Board(
         // square centers) instead of raw finger movement.
         pieceAnim?.let { anim ->
             val pieceSizePx = cellSizePx * 0.82f
-            val topLeftPx = animatedOffset.value - Offset(pieceSizePx / 2f, pieceSizePx / 2f)
             PieceIcon(
                 pieceType = anim.piece.pieceType,
                 isWhite = anim.piece.pieceSide == Side.WHITE,
                 modifier = Modifier
                     .size(with(density) { pieceSizePx.toDp() })
-                    .offset { IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt()) },
+                    // animatedOffset.value is read inside the offset lambda
+                    // (layout phase), so each tween frame re-places only this
+                    // floating piece instead of recomposing the whole board.
+                    .offset {
+                        val topLeftPx = animatedOffset.value - Offset(pieceSizePx / 2f, pieceSizePx / 2f)
+                        IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt())
+                    },
             )
         }
 
@@ -742,12 +760,15 @@ private fun Board(
     }
 }
 
-private fun rowColOf(square: Square): Pair<Int, Int> {
-    val name = square.toString()
-    val col = name[0] - 'A'
-    val row = 8 - (name[1] - '0')
-    return row to col
-}
+/**
+ * row 0 = rank 8 (top of an unflipped board), col 0 = file A. Integer math
+ * off chesslib's enum layout (A1 = ordinal 0 … H8 = 63, rank = ordinal/8,
+ * file = ordinal%8) instead of building and parsing the square's name
+ * string — this and [squareAt] run per gesture event and per square in
+ * Board()'s 8×8 loop.
+ */
+private fun rowColOf(square: Square): Pair<Int, Int> =
+    (7 - square.rank.ordinal) to square.file.ordinal
 
 @Composable
 private fun KeyboardTab(boardSide: Dp, onTapped: () -> Unit) {
@@ -894,8 +915,5 @@ private object HintTabShape : Shape {
     }
 }
 
-private fun squareAt(row: Int, col: Int): Square {
-    val file = ('A' + col)
-    val rank = 8 - row
-    return Square.valueOf("$file$rank")
-}
+/** Inverse of [rowColOf] — see its doc for the row/col convention and why this is index math, not string building. */
+private fun squareAt(row: Int, col: Int): Square = Square.squareAt((7 - row) * 8 + col)
