@@ -42,21 +42,22 @@ sealed interface MoveOutcome {
 /**
  * Drives one Lichess puzzle on top of chesslib (bhlangonijr/chesslib —
  * RESEARCH.md 8절). `puzzle.solution` alternates solver / opponent moves
- * starting with the SOLVER at index 0 — the position at `initialPly` is
- * already the solver's turn, nothing is auto-played on load.
+ * starting with the SOLVER at index 0 — the position at the end of
+ * `game.pgn` is already the solver's turn, nothing is auto-played on load.
  *
  * The real root cause of the long-running hint-color bug (DESIGN.md 5절
- * "힌트" 항목의 전체 기록): `initialPly` is **1-indexed as "the ply about to
- * be played next"**, not "how many plies to replay". Replaying exactly
- * `initialPly` SAN tokens (the original code, and the CSV-database-
- * convention guess that replaced it and had to be reverted) lands one ply
- * *too far* — proven by connecting to a real device (`adb pair`/`connect`)
- * and reading a real puzzle's logged `game.pgn`/`initialPly`/`solution`
- * (`PuzzleViewModel`'s `Log.d`) straight into python-chess: replaying
- * `initialPly` tokens left the wrong side to move and `solution[0]`
- * illegal from that position; replaying `initialPly - 1` tokens gave the
- * right side to move with `solution[0]` legal. Confirmed the same way
- * against the official `/next` example puzzle in the API docs, too.
+ * "힌트" 항목의 전체 기록, RESEARCH.md 5-A절): `game.pgn` should be replayed
+ * **in full** — `initialPly` does not control how many tokens to replay at
+ * all. A first fix guessed `initialPly` tokens, a second guessed
+ * `initialPly - 1`; both left `solution[0]` legal in isolation but broke
+ * on `solution[1]` (the auto-played opponent reply), because neither
+ * actually reached the true position. Proven with two independent real
+ * puzzles (the official `/next` docs example and one pulled live off the
+ * user's own watch via `adb pair`/`connect` + `PuzzleViewModel`'s `Log.d`)
+ * replayed through python-chess: only replaying every token of `game.pgn`
+ * makes the *entire* solution sequence legal move-by-move; every partial
+ * count — including both earlier guesses — breaks on some move in the
+ * sequence, not just the first.
  */
 class PuzzleEngine(private val puzzle: PuzzleData) {
 
@@ -69,13 +70,12 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
 
     init {
         // game.pgn is space-separated SAN tokens with no move numbers
-        // (RESEARCH.md 3절 example response) — replay initialPly - 1 of them
-        // to reach the puzzle's starting position (see class doc above for
-        // why it's initialPly - 1 and not initialPly).
+        // (RESEARCH.md 3절 example response) — replay every one of them to
+        // reach the puzzle's starting position (see class doc above:
+        // initialPly is not a replay count).
         val sanMoves = puzzle.gamePgn.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        val plyCount = (puzzle.initialPly - 1).coerceIn(0, sanMoves.size)
-        for (i in 0 until plyCount) {
-            check(board.doMove(sanMoves[i])) { "Failed to replay '${sanMoves[i]}' at ply $i for puzzle ${puzzle.id}" }
+        for ((i, san) in sanMoves.withIndex()) {
+            check(board.doMove(san)) { "Failed to replay '$san' at ply $i for puzzle ${puzzle.id}" }
         }
     }
 

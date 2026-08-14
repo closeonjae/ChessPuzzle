@@ -12,22 +12,22 @@ class PuzzleEngineTest {
 
     /**
      * Fool's mate: 1.f3 e5 2.g4 — mate in one for Black (Qh4#), a single-
-     * element solution. initialPly=4 is 1-indexed "the ply about to be
-     * played next" (PuzzleEngine's class doc) — replays initialPly-1 = 3
-     * tokens (f3, e5, g4), leaving Black to move with Qh4# next.
+     * element solution. gamePgn stops right before the solution move itself
+     * (PuzzleEngine replays the whole thing — the class doc explains why
+     * initialPly isn't a replay count), leaving Black to move with Qh4# next.
      */
     private fun foolsMate() = PuzzleEngine(
         PuzzleData(
             id = "test-mate-in-1",
-            gamePgn = "f3 e5 g4 Qh4",
-            initialPly = 4,
+            gamePgn = "f3 e5 g4",
+            initialPly = 3,
             solution = listOf("d8h4"),
             rating = 900,
         )
     )
 
     @Test
-    fun `replays the game up to initialPly and reports the side to move`() {
+    fun `replays the whole game and reports the side to move`() {
         val engine = foolsMate()
         assertEquals(Side.BLACK, engine.sideToMove)
         assertFalse(engine.isSolved)
@@ -99,7 +99,7 @@ class PuzzleEngineTest {
             PuzzleData(
                 id = "test-ruy-lopez-illegal",
                 gamePgn = "e4 e5 Nf3 Nc6 Bb5",
-                initialPly = 6,
+                initialPly = 5,
                 solution = listOf("a7a6", "b5a4", "g8f6"),
                 rating = 1200,
             )
@@ -117,7 +117,7 @@ class PuzzleEngineTest {
             PuzzleData(
                 id = "test-ruy-lopez",
                 gamePgn = "e4 e5 Nf3 Nc6 Bb5",
-                initialPly = 6,
+                initialPly = 5,
                 solution = listOf("a7a6", "b5a4", "g8f6"),
                 rating = 1200,
             )
@@ -161,9 +161,9 @@ class PuzzleEngineTest {
     @Test
     fun `lastMove reports the opening replay's final move, then updates as moves are played`() {
         val engine = foolsMate()
-        // gamePgn "f3 e5 g4 Qh4" replayed (initialPly-1 = 3 tokens) stops
-        // right after White's g4 — that's the last move on the board before
-        // anyone has played anything through the engine itself.
+        // gamePgn "f3 e5 g4" replayed in full stops right after White's g4
+        // — that's the last move on the board before anyone has played
+        // anything through the engine itself.
         assertEquals(Square.G2, engine.lastMove?.from)
         assertEquals(Square.G4, engine.lastMove?.to)
 
@@ -177,11 +177,9 @@ class PuzzleEngineTest {
      * `PuzzleViewModel`'s `Log.d` on the user's own watch (connected
      * directly via `adb pair`/`connect`) at the exact moment the hint bug
      * was showing "White to move" with the hint on Black's queen.
-     * python-chess confirmed replaying `initialPly` (28) tokens leaves
-     * White to move with solution[0] illegal; replaying `initialPly - 1`
-     * (27) leaves Black to move with it legal — the actual root cause,
-     * not the solver/opponent-first question chased (and reverted)
-     * earlier.
+     * `initialPly=28` is kept verbatim (real API data) even though
+     * PuzzleEngine no longer reads it — only `game.pgn`'s own length
+     * decides how much gets replayed now (class doc above).
      */
     @Test
     fun `real puzzle tOfGm — hint lands on the solver's own piece, not the opponent's`() {
@@ -200,5 +198,35 @@ class PuzzleEngineTest {
         assertEquals(Square.D7, hint?.from)
         assertEquals(Square.H3, hint?.to)
         assertEquals(engine.sideToMove, engine.board.getPiece(hint!!.from).pieceSide)
+    }
+
+    /**
+     * Regression, same real puzzle: the actual crash the previous
+     * (reverted-and-refixed) `initialPly - 1` guess still had — playing
+     * the correct first move (d7h3) then trying to auto-play the
+     * opponent's reply (f1f2) crashed with `IllegalStateException:
+     * Solution reply 'f1f2' was illegal`, straight out of a UI tap
+     * handler with nothing catching it. With the full-`game.pgn` replay
+     * this now completes normally all the way to Solved.
+     */
+    @Test
+    fun `real puzzle tOfGm — the full solution sequence plays through to Solved`() {
+        val engine = PuzzleEngine(
+            PuzzleData(
+                id = "tOfGm",
+                gamePgn = "d4 e5 dxe5 Nc6 Nc3 Nxe5 Bf4 Nc6 Nf3 d6 Nd4 Bd7 Nxc6 Bxc6 e3 Nf6 Bc4 Be7 " +
+                    "O-O Qd7 Nd5 O-O-O Nxf6 gxf6 Bxf7 Rdf8 Bh5 Rfg8 f3",
+                initialPly = 28,
+                solution = listOf("d7h3", "f1f2", "h3h5"),
+                rating = 1500,
+            )
+        )
+        val first = engine.attemptCoordinates(Square.D7, Square.H3)
+        assertIs<MoveOutcome.Correct>(first)
+        assertEquals("f1f2", first.opponentReply?.toString())
+
+        val second = engine.attemptCoordinates(Square.H3, Square.H5)
+        assertIs<MoveOutcome.Solved>(second)
+        assertTrue(engine.isSolved)
     }
 }

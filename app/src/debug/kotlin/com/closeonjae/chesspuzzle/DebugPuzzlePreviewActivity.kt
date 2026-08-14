@@ -75,7 +75,7 @@ private class FakePuzzleRepository(
                 plays = 0,
                 solution = listOf("a7a6", "b5a4", "g8f6"),
                 themes = listOf("opening"),
-                initialPly = 6,
+                initialPly = 5,
             ),
         ),
     )

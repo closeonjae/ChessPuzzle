@@ -94,7 +94,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
             selected == null -> if (isOwnPiece(engine, square)) _uiState.update { it.copy(selectedSquare = square) }
             selected == square -> _uiState.update { it.copy(selectedSquare = null) }
             isOwnPiece(engine, square) -> _uiState.update { it.copy(selectedSquare = square) }
-            else -> handleOutcome(engine, engine.attemptCoordinates(selected, square))
+            else -> attemptSafely(engine) { it.attemptCoordinates(selected, square) }
         }
     }
 
@@ -104,7 +104,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         val engine = state.engine ?: return
         if (state.isLoading || engine.isSolved || san.isBlank()) return
         if (state.hintSquare != null) _uiState.update { it.copy(hintSquare = null) }
-        handleOutcome(engine, engine.attemptSan(san.trim()))
+        attemptSafely(engine) { it.attemptSan(san.trim()) }
     }
 
     /**
@@ -125,8 +125,29 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         } else {
             val move = engine.hintMove ?: return
             _uiState.update { it.copy(hintSquare = null) }
-            handleOutcome(engine, engine.attemptCoordinates(move.from, move.to))
+            attemptSafely(engine) { it.attemptCoordinates(move.from, move.to) }
         }
+    }
+
+    /**
+     * Runs a move attempt against [engine], catching anything it throws
+     * instead of letting it crash the app. Real-device crash log:
+     * `PuzzleEngine.attempt()`'s internal `check()` on the auto-played
+     * opponent reply threw `IllegalStateException` straight out of a UI tap
+     * handler, with nothing between it and the app dying — a puzzle-data
+     * problem (root-caused and fixed separately, DESIGN.md 5절), but a
+     * *move attempt* should never be able to take the whole app down over
+     * one puzzle's data either way, the same reasoning `loadNextPuzzle()`'s
+     * `mapCatching` already applies to fetching a puzzle in the first place.
+     */
+    private fun attemptSafely(engine: PuzzleEngine, attempt: (PuzzleEngine) -> MoveOutcome) {
+        val outcome = try {
+            attempt(engine)
+        } catch (e: IllegalStateException) {
+            _uiState.update { it.copy(selectedSquare = null, error = e.message ?: "Move failed") }
+            return
+        }
+        handleOutcome(engine, outcome)
     }
 
     private fun handleOutcome(engine: PuzzleEngine, outcome: MoveOutcome) {
