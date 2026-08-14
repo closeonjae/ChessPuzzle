@@ -9,7 +9,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
-private const val ANGLE = "mix"
+// Lichess theme key for the endgame angle (user request — was "mix", the
+// catch-all). Both the GET and the solve POST must use the same angle so
+// the solve is recorded against the batch it came from.
+private const val ANGLE = "endgame"
 
 /**
  * Fetch/report loop backed by GET+POST /api/puzzle/batch/{angle}
