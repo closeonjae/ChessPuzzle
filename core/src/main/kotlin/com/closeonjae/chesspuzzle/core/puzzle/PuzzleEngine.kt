@@ -79,6 +79,14 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
 
     val sideToMove: Side get() = board.sideToMove
 
+    /**
+     * The most recently played move on the board, if any — for last-move-
+     * square highlighting (DESIGN.md 5절). Reuses chesslib's own move-
+     * history stack, so this also reflects the puzzle's opening replay
+     * (not just moves made during play).
+     */
+    val lastMove: Move? get() = board.backup.lastOrNull()?.move
+
     /** The solver's next expected move, for the hint button (DESIGN.md 5절) — doesn't touch the board. */
     val hintMove: Move? get() = if (isSolved) null else Move(puzzle.solution[solutionIndex], board.sideToMove)
 

@@ -69,6 +69,7 @@ import com.closeonjae.chesspuzzle.ui.theme.BoardLight
 import com.closeonjae.chesspuzzle.ui.theme.Dimens
 import com.closeonjae.chesspuzzle.ui.theme.ErrorColor
 import com.closeonjae.chesspuzzle.ui.theme.HintTint
+import com.closeonjae.chesspuzzle.ui.theme.LastMoveTint
 import com.closeonjae.chesspuzzle.ui.theme.LegalDot
 import com.closeonjae.chesspuzzle.ui.theme.RatingDown
 import com.closeonjae.chesspuzzle.ui.theme.RatingUp
@@ -297,6 +298,9 @@ private fun Board(
     } else {
         emptyMap()
     }
+    // Last-moved from/to squares (user request) — reused the color that
+    // used to be hintTint's, once hint moved to red (see Color.kt).
+    val lastMove = engine?.lastMove
 
     val density = LocalDensity.current
     val boardSidePx = with(density) { boardSide.toPx() }
@@ -451,6 +455,17 @@ private fun Board(
                                         square == selected -> SelectedSquare
                                         isLight -> BoardLight
                                         else -> BoardDark
+                                    },
+                                )
+                                .then(
+                                    // Last-moved from/to squares (user request): same
+                                    // translucent-wash treatment as the hint square below,
+                                    // drawn first so the hint tint wins if a square is
+                                    // somehow both at once.
+                                    if (square == lastMove?.from || square == lastMove?.to) {
+                                        Modifier.background(LastMoveTint)
+                                    } else {
+                                        Modifier
                                     },
                                 )
                                 .then(

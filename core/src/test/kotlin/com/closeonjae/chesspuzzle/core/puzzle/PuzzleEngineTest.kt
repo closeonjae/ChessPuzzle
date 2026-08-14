@@ -135,4 +135,18 @@ class PuzzleEngineTest {
         engine.attemptCoordinates(Square.D8, Square.H4)
         assertEquals(null, engine.hintMove)
     }
+
+    @Test
+    fun `lastMove reports the opening replay's final move, then updates as moves are played`() {
+        val engine = foolsMate()
+        // gamePgn "f3 e5 g4 Qh4" replayed to initialPly=3 stops right after
+        // White's g4 — that's the last move on the board before anyone has
+        // played anything through the engine itself.
+        assertEquals(Square.G2, engine.lastMove?.from)
+        assertEquals(Square.G4, engine.lastMove?.to)
+
+        engine.attemptCoordinates(Square.D8, Square.H4)
+        assertEquals(Square.D8, engine.lastMove?.from)
+        assertEquals(Square.H4, engine.lastMove?.to)
+    }
 }

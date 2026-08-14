@@ -35,8 +35,12 @@ val SelectedSquare = Color(
 )
 val LegalDot = Color(0x40000000) // rgba(0,0,0,0.25) — legal-move dot/capture-ring
 val LastMoveOutline = Color(0xE6C15F3C) // rgba(193,95,60,0.9)
-// Hint square wash (user request) — translucent yellow (originally red at
-// 50% alpha, changed on user feedback) sitting between the square's own
-// background and the piece drawn on top of it. Alpha: 50% -> 25% -> 37.5%,
-// each a separate user request.
-val HintTint = Color(0x60FFFF00) // rgba(255,255,0,0.375)
+// Last-moved from/to squares (user request) — the same translucent wash
+// treatment as hintTint below, just repurposed: this used to *be*
+// hintTint's yellow before the hint/last-move colors were swapped.
+val LastMoveTint = Color(0x60FFFF00) // rgba(255,255,0,0.375)
+// Hint square wash (user request) — translucent color sitting between the
+// square's own background and the piece drawn on top of it. Color history:
+// red 50% -> yellow 50% -> yellow 25% -> yellow 37.5% -> back to red (same
+// 37.5% alpha), once last-moveTint above took over yellow for its own use.
+val HintTint = Color(0x60FF0000) // rgba(255,0,0,0.375)
