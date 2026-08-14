@@ -153,6 +153,35 @@ RemoteAuthClient.create(context).sendAuthorizationRequest(
 
 ([api-puzzle-next.yaml](https://github.com/lichess-org/api/blob/master/doc/specs/tags/puzzles/api-puzzle-next.yaml), [PuzzleAndGame.yaml](https://github.com/lichess-org/api/blob/master/doc/specs/schemas/PuzzleAndGame.yaml))
 
+### 5-A. 퍼즐 API로 얻을 수 있는 전체 정보 (스키마 전수 조사, 힌트 버그 재조사 중 정리)
+
+**엔드포인트는 3개뿐**(모두 `PuzzleAndGame` 스키마를 응답에 사용) — `GET /api/puzzle/next`, `GET /api/puzzle/batch/{angle}`(이 앱이 실제로 쓰는 것, `LichessApiClient.fetchPuzzleBatch`), `POST /api/puzzle/batch/{angle}`(정답 보고, `solvePuzzleBatch`). 세 엔드포인트가 주는 **퍼즐/게임 데이터 자체는 완전히 동일한 모양**이다.
+
+**요청 파라미터 (batch GET, `api-puzzle-batch-angle.yaml`)**
+| 파라미터 | 위치 | 설명 | 앱에서 사용? |
+|---|---|---|---|
+| `angle` | path, 필수 | 테마/오프닝 필터. `"mix"` = 전체 뒤섞임 | O (`"mix"` 고정) |
+| `nb` | query | 몇 개 받을지, 1~50, 기본 15 | O (`count=1`) |
+| `difficulty` | query | `easiest\|easier\|normal\|harder\|hardest`, 저장된 레이팅 대비 상대값 | **X — 항상 서버 기본값** |
+| `color` | query | `white\|black`, 원하는 플레이 색. **문서에 "nb=1일 때만 동작"이라 명시** | **X — 노출 안 됨** (지금은 매번 무작위 색) |
+
+`color`는 이 앱처럼 `nb=1`로 매번 부르는 구조와 정확히 궁합이 맞는 파라미터라, 노출하면 "항상 흑/항상 백만 풀기" 같은 향후 설정에 바로 쓸 수 있다 — 지금은 미사용.
+
+**응답 필드 전체 (`PuzzleAndGame` → `game` + `puzzle`, `PuzzleAndGame.yaml` 전수 조사)**
+
+`game` (필수: `clock`, `id`, `perf`, `pgn`, `players`, `rated`):
+- `id`(string), `pgn`(string, RESEARCH.md 3절), `rated`(bool), `clock`(string, "5+1" 형식)
+- `perf`: `key`(예: "blitz"), `name`(예: "Blitz")
+- `players[2]`: `name`, `id`, `color`("white"/"black"), `rating`(int) + 앱에서 안 쓰는 선택 필드 `flair`, `patron`, `patronColor`, `title`(타이틀 보유자면 "GM" 등)
+
+`puzzle` (필수: `id`, `initialPly`, `plays`, `rating`, `solution`, `themes`):
+- `id`, `rating`(int), `plays`(int, 이 퍼즐이 풀린 횟수), `solution`(UCI 문자열 배열), `themes`(문자열 배열, 예: `"mateIn2"`, `"middlegame"`, `"short"`, `"attraction"`, `"sacrifice"` — 태그 종류가 매우 많고 공식 목록은 별도 조사 필요), `initialPly`(int)
+- **`fen`(string, optional)**, **`lastMove`(string, UCI, optional)** — `PuzzleData`/`Puzzle`에 이미 필드는 있으나(`LichessModels.kt`) **`toPuzzleData()`도 `PuzzleEngine`도 전혀 안 씀**. 이 둘이 실제로 채워져서 온다면 `game.pgn`을 `initialPly`까지 SAN으로 리플레이하는 지금 방식 대신 **`fen`을 그대로 `Board().loadFromFen(fen)`에 넣어 시작 포지션을 만들 수 있어**, PGN 토큰 파싱(기보 표기 변형, 캐슬링 표기 등)에서 올 수 있는 오류를 원천적으로 없앨 수 있다 — 실제 응답에 이 두 필드가 채워지는지가 아직 미확인이라(RESEARCH.md 3절에 이미 남겨둔 리스크) 다음 `Log.d`(이번 세션에 추가함, `PuzzleViewModel.loadNextPuzzle`) 결과로 확인 예정.
+
+**POST(정답 보고) 요청/응답**: 요청 `{ "solutions": [{ "id", "win", "rated" }] }`, `nb`(0~50, 0=다음 배치 안 받음). 응답 `PuzzleBatchSolveResponse`: `puzzles[]`(nb>0일 때 다음 배치), `glicko{rating, deviation}`, `rounds[]{id, win, ratingDiff}`.
+
+**`solution[]`의 첫 항목이 누구 수인지 — 공식 예시로 재확인**: `/next` 문서의 실제 예시 퍼즐(`QBX2O`, `themes: ["mateIn2", ...]`, `solution: ["f2g1","h1g1","c8c1"]`)을 수순으로 풀어보면 정확히 **"...Rf2-g1+(체크) 2.Kxg1(외통 없는 유일한 응수) Rc8-c1#(백랭크 메이트)"** 패턴이다 — 체크·메이트를 거는 두 수(1·3번째)가 같은 편(솔버)이고, 강제로 낀 응수(2번째, 킹이 잡는 수) 하나가 상대편이라는 게 수 자체의 체스적 의미로 명확하다. 즉 **`solution[0]`은 솔버의 수가 맞다** — DESIGN.md 5절에 기록된 "auto-play 시도 → 실기기에서 정상 퍼즐 로딩이 거의 다 깨짐 → 되돌림" 사건은 곧 이 공식 예시로도 재확인된 것: Lichess **퍼즐 데이터베이스 CSV 덤프**(database.lichess.org, FEN+Moves, opponent-first)와 이 **REST API**(game.pgn+initialPly+solution, solver-first)는 같은 데이터를 담고 있어도 규약이 다른 별개의 두 형식이었다. 남은 미해결 문제(실기기에서 힌트가 상대 기물을 가리킴)는 이 "누가 먼저"의 문제가 아니라 **다른 원인**이라는 뜻 — 실제 `Log.d` 캡처로 계속 조사 중.
+
 ## 6. 퍼즐 결과 반영(레이팅 갱신) — `/api/puzzle/next` 단독으론 부족
 
 **중요 발견**: `/api/puzzle/next`를 반복 호출하는 것만으로는 **사용자의 퍼즐 레이팅이 갱신되지 않는다.** `difficulty` 파라미터는 "저장된 현재 레이팅" 대비 상대값일 뿐, 그 저장된 레이팅 자체를 갱신하는 경로가 아니다.
