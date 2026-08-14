@@ -29,7 +29,20 @@ const val OPPONENT_REPLY_PAUSE_MS = 100L
 
 data class PuzzleUiState(
     val engine: PuzzleEngine? = null,
+    /**
+     * The solver's own puzzle Glicko rating (user report — this used to be
+     * overwritten with each newly-loaded *puzzle's own* difficulty rating
+     * instead, e.g. "1855", making the number jump around between
+     * unrelated values every puzzle instead of tracking the solver's
+     * actual rating, and making [ratingDelta] look inconsistent with it
+     * — e.g. rating showing "1924 +13" when 13 puzzles back it was
+     * nowhere near 1911). Only ever set from [PuzzleRepository.reportSolved]'s
+     * `glicko.rating` response — null (chip hidden, RatingChip) until the
+     * very first solve, since Lichess's puzzle-batch GET doesn't return
+     * the solver's own rating, only each puzzle's.
+     */
     val rating: Int? = null,
+    /** The change from the solve that produced the current [rating] (user request) — cleared back to null on loading/advancing to a new puzzle, so it doesn't linger past the solve it belongs to. */
     val ratingDelta: Int? = null,
     val selectedSquare: Square? = null,
     /** Set by a first hint-button tap: the square whose piece the solver needs to move. */
@@ -71,7 +84,6 @@ data class PuzzleUiState(
      * [PuzzleViewModel.advanceToNextPuzzle].
      */
     val nextEngine: PuzzleEngine? = null,
-    val nextRating: Int? = null,
     /** The background fetch of [nextEngine] failed (user request: tapping a solved puzzle whose next puzzle failed to load shows a Retry button instead of doing nothing). */
     val nextPuzzleError: Boolean = false,
     /** Set by a tap on a solved board before [nextEngine] is ready (user request) — shows a loading spinner (or, if [nextPuzzleError] is also true, a Retry button) instead of the tap looking ignored; the fetch finishing on its own then finishes the advance. */
@@ -101,18 +113,19 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 hintUsedCount = 0,
                 hadWrongAttempt = false,
                 feedback = MoveFeedback.NONE,
+                // ratingDelta clears (belonged to whatever was just solved,
+                // if anything) — rating itself is untouched, since it's the
+                // solver's own rating, not this puzzle's (see PuzzleUiState.rating).
+                ratingDelta = null,
                 nextEngine = null,
-                nextRating = null,
                 nextPuzzleError = false,
                 awaitingNextPuzzle = false,
             )
         }
         viewModelScope.launch {
             fetchPuzzle()
-                .onSuccess { (engine, rating) ->
-                    _uiState.update {
-                        it.copy(engine = engine, rating = rating, ratingDelta = null, isLoading = false)
-                    }
+                .onSuccess { engine ->
+                    _uiState.update { it.copy(engine = engine, isLoading = false) }
                 }
                 .onFailure { e ->
                     _uiState.update { it.copy(isLoading = false, error = e.message ?: "Connection failed") }
@@ -137,13 +150,13 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
      * diagnosed from `adb logcat` instead of guessed at (DESIGN.md 5절
      * 힌트 버그 기록).
      */
-    private fun buildEngine(puzzleAndGame: PuzzleAndGame): Pair<PuzzleEngine, Int?> {
+    private fun buildEngine(puzzleAndGame: PuzzleAndGame): PuzzleEngine {
         Log.d(
             "PuzzleViewModel",
             "puzzle=${puzzleAndGame.puzzle.id} initialPly=${puzzleAndGame.puzzle.initialPly} " +
                 "gamePgn=\"${puzzleAndGame.game.pgn}\" solution=${puzzleAndGame.puzzle.solution}",
         )
-        return PuzzleEngine(puzzleAndGame.toPuzzleData()) to puzzleAndGame.puzzle.rating
+        return PuzzleEngine(puzzleAndGame.toPuzzleData())
     }
 
     /**
@@ -152,14 +165,14 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
      * when a solve response doesn't come bundled with the next one
      * ([reportSolvedAndPrefetchNext]'s fallback, [retryNextPuzzle]).
      */
-    private suspend fun fetchPuzzle(): Result<Pair<PuzzleEngine, Int?>> =
+    private suspend fun fetchPuzzle(): Result<PuzzleEngine> =
         repository.nextPuzzle().mapCatching { buildEngine(it) }
 
     /** Applies a fetched-next-puzzle result the same way regardless of where it came from — a fresh GET or bundled into a solve response. */
-    private fun applyNextPuzzleResult(result: Result<Pair<PuzzleEngine, Int?>>) {
+    private fun applyNextPuzzleResult(result: Result<PuzzleEngine>) {
         result
-            .onSuccess { (engine, rating) ->
-                _uiState.update { it.copy(nextEngine = engine, nextRating = rating, nextPuzzleError = false) }
+            .onSuccess { engine ->
+                _uiState.update { it.copy(nextEngine = engine, nextPuzzleError = false) }
                 // The solver already tapped once and is waiting on this
                 // exact fetch (PuzzleUiState.awaitingNextPuzzle) — finish
                 // the advance now instead of making them tap again.
@@ -209,7 +222,9 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         _uiState.update {
             it.copy(
                 engine = engine,
-                rating = state.nextRating,
+                // ratingDelta clears (belonged to the just-solved puzzle) —
+                // rating itself is untouched, it's the solver's own rating,
+                // not this puzzle's (see PuzzleUiState.rating).
                 ratingDelta = null,
                 selectedSquare = null,
                 hintSquare = null,
@@ -220,7 +235,6 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 hadWrongAttempt = false,
                 feedback = MoveFeedback.NONE,
                 nextEngine = null,
-                nextRating = null,
                 nextPuzzleError = false,
                 awaitingNextPuzzle = false,
             )
