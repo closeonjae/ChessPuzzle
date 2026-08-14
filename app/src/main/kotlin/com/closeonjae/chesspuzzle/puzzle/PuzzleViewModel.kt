@@ -40,6 +40,10 @@ data class PuzzleUiState(
      * record of where the piece was "trying" to go.
      */
     val wrongAttempt: Move? = null,
+    /** How many times the hint button has been checked on this puzzle (user request — counted on the first tap of each look, whether or not it's then used to actually play the move). Resets to 0 on a new puzzle. */
+    val hintUsedCount: Int = 0,
+    /** Whether any wrong move has been made on this puzzle attempt (user request — resets to false on a new puzzle). Both this and [hintUsedCount] feed into whether the solve gets reported to Lichess as a win (DESIGN.md 5절). */
+    val hadWrongAttempt: Boolean = false,
     val feedback: MoveFeedback = MoveFeedback.NONE,
     val isLoading: Boolean = true,
     val error: String? = null,
@@ -64,6 +68,8 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 hintSquare = null,
                 animatedMove = null,
                 wrongAttempt = null,
+                hintUsedCount = 0,
+                hadWrongAttempt = false,
                 feedback = MoveFeedback.NONE,
             )
         }
@@ -137,7 +143,12 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         val armed = state.hintSquare
         if (armed == null) {
             val from = engine.hintMove?.from ?: return
-            _uiState.update { it.copy(hintSquare = from, selectedSquare = null) }
+            // Counted here, on the "reveal" tap, not the "play" tap (user
+            // request: rating should reflect how many times the hint was
+            // *checked*, whether or not it then got used to move).
+            _uiState.update {
+                it.copy(hintSquare = from, selectedSquare = null, hintUsedCount = it.hintUsedCount + 1)
+            }
         } else {
             val move = engine.hintMove ?: return
             _uiState.update { it.copy(hintSquare = null) }
@@ -170,7 +181,12 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
         when (outcome) {
             MoveOutcome.IllegalMove -> _uiState.update { it.copy(selectedSquare = null) }
             is MoveOutcome.WrongMove -> _uiState.update {
-                it.copy(selectedSquare = null, feedback = MoveFeedback.WRONG, wrongAttempt = outcome.attempted)
+                it.copy(
+                    selectedSquare = null,
+                    feedback = MoveFeedback.WRONG,
+                    wrongAttempt = outcome.attempted,
+                    hadWrongAttempt = true,
+                )
             }
             is MoveOutcome.Correct -> {
                 _uiState.update {
@@ -189,19 +205,33 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 }
             }
             is MoveOutcome.Solved -> {
+                // Lichess's own API only takes a win/lose bool for a solve —
+                // there's no "partial credit" endpoint to scale a rating
+                // *amount* by (user request was "레이팅 증감을 설정" — the closest
+                // honest match within that constraint). Any hint check or
+                // wrong move along the way reports the solve as a loss
+                // (rating goes down, same as lichess.org/training already
+                // does for "view solution"/a wrong try) instead of a win.
+                val state = _uiState.value
+                val win = state.hintUsedCount == 0 && !state.hadWrongAttempt
                 _uiState.update {
                     val base = it.copy(selectedSquare = null, feedback = MoveFeedback.SOLVED)
                     if (outcome.solverMove != null) base.copy(animatedMove = outcome.solverMove) else base
                 }
-                reportSolvedAndAdvance(engine.id)
+                reportSolvedAndAdvance(engine.id, win)
             }
         }
     }
 
-    private fun reportSolvedAndAdvance(puzzleId: String) {
+    private fun reportSolvedAndAdvance(puzzleId: String, win: Boolean) {
         viewModelScope.launch {
-            repository.reportSolved(puzzleId, win = true).onSuccess { response ->
+            repository.reportSolved(puzzleId, win = win).onSuccess { response ->
                 val diff = response.rounds.firstOrNull()?.ratingDiff
+                // win=false here means a hint was checked and/or a wrong
+                // move was made this attempt (see handleOutcome) — kept as
+                // a log, not just a comment, since it's otherwise invisible
+                // whether a given solve was actually reported as a loss.
+                Log.d("PuzzleViewModel", "reportSolved(win=$win) -> ratingDiff=$diff")
                 response.glicko?.let { glicko ->
                     _uiState.update { it.copy(rating = glicko.rating.toInt(), ratingDelta = diff) }
                 }

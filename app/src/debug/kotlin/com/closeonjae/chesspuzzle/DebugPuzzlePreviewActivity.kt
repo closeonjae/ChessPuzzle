@@ -80,11 +80,17 @@ private class FakePuzzleRepository(
         ),
     )
 
-    override suspend fun reportSolved(puzzleId: String, win: Boolean): Result<PuzzleBatchSolveResponse> =
-        Result.success(
+    // Mirrors real Lichess behavior enough to screen-check the hint/wrong-
+    // move rating logic (PuzzleViewModel.handleOutcome) without needing a
+    // real login: a reported win nudges the rating up, a loss nudges it
+    // down, instead of always returning the same canned +14.
+    override suspend fun reportSolved(puzzleId: String, win: Boolean): Result<PuzzleBatchSolveResponse> {
+        val diff = if (win) 14 else -6
+        return Result.success(
             PuzzleBatchSolveResponse(
-                glicko = PuzzleGlicko(rating = 1646.0, deviation = 80.0),
-                rounds = listOf(PuzzleRound(id = puzzleId, win = win, ratingDiff = 14)),
+                glicko = PuzzleGlicko(rating = 1632.0 + diff, deviation = 80.0),
+                rounds = listOf(PuzzleRound(id = puzzleId, win = win, ratingDiff = diff)),
             ),
         )
+    }
 }
