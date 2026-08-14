@@ -168,10 +168,41 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
     private suspend fun fetchPuzzle(): Result<PuzzleEngine> =
         repository.nextPuzzle().mapCatching { buildEngine(it) }
 
-    /** Applies a fetched-next-puzzle result the same way regardless of where it came from — a fresh GET or bundled into a solve response. */
-    private fun applyNextPuzzleResult(result: Result<PuzzleEngine>) {
+    /**
+     * Applies a fetched-next-puzzle result the same way regardless of where
+     * it came from — a fresh GET or bundled into a solve response.
+     *
+     * Guards against the exact bug the bundled-response scheme was meant to
+     * prevent (user report: solving a puzzle rolled back into the same one
+     * again) — it can still resurface however "next" ends up fetched, so
+     * this checks it here, in the one place both paths funnel through,
+     * rather than only where the bundled response is read. If what came
+     * back is somehow the very puzzle already showing (already solved,
+     * still on screen), it's refused and retried once more with a fresh GET
+     * — bounded ([retriesLeft]) so a persistent repeat can't loop forever;
+     * if the retry *also* comes back the same, it's shown anyway rather
+     * than leaving the solver stuck. Logged plainly either way (not inside
+     * a `.let`) so a recurrence has a trace to diagnose from in
+     * `adb logcat` — the original report had none.
+     */
+    private fun applyNextPuzzleResult(result: Result<PuzzleEngine>, retriesLeft: Int = 1) {
         result
             .onSuccess { engine ->
+                val currentId = _uiState.value.engine?.id
+                if (engine.id == currentId) {
+                    if (retriesLeft > 0) {
+                        Log.d(
+                            "PuzzleViewModel",
+                            "next-puzzle fetch returned the same puzzle ($currentId) again — retrying",
+                        )
+                        fetchNextPuzzleInBackground(retriesLeft - 1)
+                        return@onSuccess
+                    }
+                    Log.d(
+                        "PuzzleViewModel",
+                        "next-puzzle fetch still returned the same puzzle ($currentId) after retrying — showing it anyway",
+                    )
+                }
                 _uiState.update { it.copy(nextEngine = engine, nextPuzzleError = false) }
                 // The solver already tapped once and is waiting on this
                 // exact fetch (PuzzleUiState.awaitingNextPuzzle) — finish
@@ -186,11 +217,12 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
     /**
      * Loads the next puzzle in the background with its own GET — the
      * fallback path when a solve response didn't already bundle one (the
-     * debug fixture, or a solve report that itself failed), and what
-     * [retryNextPuzzle] retries with.
+     * debug fixture, or a solve report that itself failed), what
+     * [retryNextPuzzle] retries with, and what [applyNextPuzzleResult]
+     * itself retries with once if that result is a same-puzzle repeat.
      */
-    private fun fetchNextPuzzleInBackground() {
-        viewModelScope.launch { applyNextPuzzleResult(fetchPuzzle()) }
+    private fun fetchNextPuzzleInBackground(retriesLeft: Int = 1) {
+        viewModelScope.launch { applyNextPuzzleResult(fetchPuzzle(), retriesLeft) }
     }
 
     /** Retry button on a solved puzzle whose background next-puzzle fetch failed (user request). */
