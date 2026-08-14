@@ -3,6 +3,7 @@ package com.closeonjae.chesspuzzle.puzzle
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.closeonjae.chesspuzzle.core.lichess.PuzzleAndGame
 import com.closeonjae.chesspuzzle.core.puzzle.MoveOutcome
 import com.closeonjae.chesspuzzle.core.puzzle.PuzzleEngine
 import com.closeonjae.chesspuzzle.core.puzzle.toPuzzleData
@@ -107,52 +108,63 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
     }
 
     /**
-     * Fetches one puzzle and wraps it in a [PuzzleEngine] — shared by
-     * [loadNextPuzzle] (the current puzzle, board dimmed while it's in
-     * flight) and [fetchNextPuzzleInBackground] (the *next* puzzle,
-     * prefetched silently while the just-solved board is still showing).
+     * Wraps one fetched puzzle in a [PuzzleEngine] — shared by every path
+     * that ends up with a [PuzzleAndGame], whether from its own GET
+     * ([fetchPuzzle]) or bundled into a solve POST's response
+     * ([reportSolvedAndPrefetchNext]).
+     *
+     * PuzzleEngine's init replays/validates the puzzle's own PGN and
+     * solution moves and throws on anything unexpected there (RESEARCH.md
+     * 8절) — the caller wraps this in `runCatching`/`mapCatching` so a
+     * malformed puzzle can't be an *uncaught* exception that crashes the
+     * whole app (real-device report: a few Retry taps after "Connection
+     * Lost" eventually force-closed the app), routing it into the same
+     * error state as any other fetch failure. Logged here (before
+     * construction can throw) so a future real-puzzle failure can be
+     * diagnosed from `adb logcat` instead of guessed at (DESIGN.md 5절
+     * 힌트 버그 기록).
      */
-    private suspend fun fetchPuzzle(): Result<Pair<PuzzleEngine, Int?>> =
-        repository.nextPuzzle()
-            // PuzzleEngine's init replays/validates the puzzle's own PGN
-            // and solution moves and throws on anything unexpected there
-            // (RESEARCH.md 8절) — mapCatching keeps a malformed puzzle
-            // from that being an *uncaught* exception that crashes the
-            // whole app (real-device report: a few Retry taps after
-            // "Connection Lost" eventually force-closed the app), routing
-            // it into the same error state as any other fetch failure.
-            // Logged here (before construction can throw) so a future
-            // real-puzzle failure can be diagnosed from `adb logcat`
-            // instead of guessed at (DESIGN.md 5절 힌트 버그 기록).
-            .mapCatching {
-                Log.d(
-                    "PuzzleViewModel",
-                    "puzzle=${it.puzzle.id} initialPly=${it.puzzle.initialPly} " +
-                        "gamePgn=\"${it.game.pgn}\" solution=${it.puzzle.solution}",
-                )
-                PuzzleEngine(it.toPuzzleData()) to it.puzzle.rating
-            }
+    private fun buildEngine(puzzleAndGame: PuzzleAndGame): Pair<PuzzleEngine, Int?> {
+        Log.d(
+            "PuzzleViewModel",
+            "puzzle=${puzzleAndGame.puzzle.id} initialPly=${puzzleAndGame.puzzle.initialPly} " +
+                "gamePgn=\"${puzzleAndGame.game.pgn}\" solution=${puzzleAndGame.puzzle.solution}",
+        )
+        return PuzzleEngine(puzzleAndGame.toPuzzleData()) to puzzleAndGame.puzzle.rating
+    }
 
     /**
-     * Loads the next puzzle silently in the background (user request) —
-     * called the moment the current one is solved, so it's usually already
-     * sitting in [PuzzleUiState.nextEngine] by the time the solver taps to
-     * move on. Also used by [retryNextPuzzle] to try again after a failure.
+     * Fetches one puzzle with its own network round trip and wraps it —
+     * used for the very first puzzle ([loadNextPuzzle]) and as the fallback
+     * when a solve response doesn't come bundled with the next one
+     * ([reportSolvedAndPrefetchNext]'s fallback, [retryNextPuzzle]).
+     */
+    private suspend fun fetchPuzzle(): Result<Pair<PuzzleEngine, Int?>> =
+        repository.nextPuzzle().mapCatching { buildEngine(it) }
+
+    /** Applies a fetched-next-puzzle result the same way regardless of where it came from — a fresh GET or bundled into a solve response. */
+    private fun applyNextPuzzleResult(result: Result<Pair<PuzzleEngine, Int?>>) {
+        result
+            .onSuccess { (engine, rating) ->
+                _uiState.update { it.copy(nextEngine = engine, nextRating = rating, nextPuzzleError = false) }
+                // The solver already tapped once and is waiting on this
+                // exact fetch (PuzzleUiState.awaitingNextPuzzle) — finish
+                // the advance now instead of making them tap again.
+                if (_uiState.value.awaitingNextPuzzle) advanceToNextPuzzle()
+            }
+            .onFailure {
+                _uiState.update { it.copy(nextPuzzleError = true) }
+            }
+    }
+
+    /**
+     * Loads the next puzzle in the background with its own GET — the
+     * fallback path when a solve response didn't already bundle one (the
+     * debug fixture, or a solve report that itself failed), and what
+     * [retryNextPuzzle] retries with.
      */
     private fun fetchNextPuzzleInBackground() {
-        viewModelScope.launch {
-            fetchPuzzle()
-                .onSuccess { (engine, rating) ->
-                    _uiState.update { it.copy(nextEngine = engine, nextRating = rating, nextPuzzleError = false) }
-                    // The solver already tapped once and is waiting on this
-                    // exact fetch (PuzzleUiState.awaitingNextPuzzle) — finish
-                    // the advance now instead of making them tap again.
-                    if (_uiState.value.awaitingNextPuzzle) advanceToNextPuzzle()
-                }
-                .onFailure {
-                    _uiState.update { it.copy(nextPuzzleError = true) }
-                }
-        }
+        viewModelScope.launch { applyNextPuzzleResult(fetchPuzzle()) }
     }
 
     /** Retry button on a solved puzzle whose background next-puzzle fetch failed (user request). */
@@ -334,15 +346,30 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
     }
 
     /**
-     * Reports the solve to Lichess (rating update) and starts loading the
-     * *next* puzzle silently in the background (user request) — the solved
-     * board now stays on screen exactly as it finished, with no auto-
-     * advance and no timer, until [onSolvedTapped] moves on, so there's no
-     * reason to wait before starting that fetch.
+     * Reports the solve to Lichess (rating update) and loads the *next*
+     * puzzle silently in the background (user request) — the solved board
+     * now stays on screen exactly as it finished, with no auto-advance and
+     * no timer, until [onSolvedTapped] moves on, so there's no reason to
+     * wait before starting this.
+     *
+     * The next puzzle normally comes back bundled in this same solve
+     * response ([PuzzleRepository.reportSolved] requests it with
+     * `nextBatchCount = 1`) instead of a separate GET — one network round
+     * trip instead of two (user report: next-puzzle loading was too slow),
+     * and — more importantly — it can only ever be a puzzle the server has
+     * *already* recorded this solve against. A separate GET fired
+     * concurrently with the solve POST (the previous approach, prefetching
+     * eagerly) could race ahead of the server recording the solve and get
+     * handed back the very puzzle just solved, still marked unsolved (user
+     * report: solving a puzzle rolled back into solving the same one
+     * again). [fetchNextPuzzleInBackground] is still the fallback for when
+     * nothing comes back bundled — the debug fixture, or a solve report
+     * that itself failed.
      */
     private fun reportSolvedAndPrefetchNext(puzzleId: String, win: Boolean) {
         viewModelScope.launch {
-            repository.reportSolved(puzzleId, win = win).onSuccess { response ->
+            val result = repository.reportSolved(puzzleId, win = win)
+            result.onSuccess { response ->
                 val diff = response.rounds.firstOrNull()?.ratingDiff
                 // win=false here means a hint was checked and/or a wrong
                 // move was made this attempt (see handleOutcome) — kept as
@@ -353,8 +380,13 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                     _uiState.update { it.copy(rating = glicko.rating.toInt(), ratingDelta = diff) }
                 }
             }
+            val bundledNext = result.getOrNull()?.puzzles?.firstOrNull()
+            if (bundledNext != null) {
+                applyNextPuzzleResult(runCatching { buildEngine(bundledNext) })
+            } else {
+                fetchNextPuzzleInBackground()
+            }
         }
-        fetchNextPuzzleInBackground()
     }
 
     /**

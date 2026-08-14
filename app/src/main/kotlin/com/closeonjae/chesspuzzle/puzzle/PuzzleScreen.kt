@@ -391,28 +391,52 @@ private fun Board(
     // the raw finger offset from where the drag started.
     var dragOriginSquare by remember { mutableStateOf<Square?>(null) }
     var dragOffsetPx by remember { mutableStateOf(Offset.Zero) }
+    // `justDraggedFrom` is set the instant a drag's own release triggers the
+    // move attempt, so that particular move doesn't get a redundant "snap
+    // back to origin, slide forward again" replay — the piece is already
+    // sitting at its destination from following the finger (user request:
+    // only a drag-and-drop move should settle instantly like this).
+    var justDraggedFrom by remember { mutableStateOf<Square?>(null) }
     // Move animation (user request): a slide from one square to another,
     // driving the floating overlay below. `pieceAnim` is what's currently
     // showing (both its origin and destination cells hide their normal
     // static piece render while this is non-null, so the overlay is the
-    // only thing drawing that piece). `justDraggedFrom` is set the instant
-    // a drag's own release triggers the move attempt, so that particular
-    // move doesn't get a redundant "snap back to origin, slide forward
-    // again" replay — the piece is already sitting at its destination from
-    // following the finger.
-    var pieceAnim by remember { mutableStateOf<PieceAnimation?>(null) }
-    val animatedOffset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
-    var justDraggedFrom by remember { mutableStateOf<Square?>(null) }
+    // only thing drawing that piece).
+    //
+    // Both keyed on `remember(animatedMove)` so they're computed
+    // *synchronously*, during the very same recomposition where a new
+    // `animatedMove` arrives — not assigned later from inside the
+    // LaunchedEffect below, which only runs on a subsequent frame. If
+    // `pieceAnim` were only set there (as it used to be), there was one
+    // recomposition in between where `animatedMove` had already changed —
+    // and the per-square loop below already reads the piece at its new
+    // destination straight from `engine.board`, which updates instantly on
+    // the ViewModel side — but nothing suppressed that square's static
+    // render yet, so the piece flashed at its destination for a frame
+    // before this effect reset it back to the origin and slid it forward
+    // again (real bug, user report: 탭으로 두면 순간 이동했다가 애니메이션이 재생됨).
+    // `animatedOffset` starts already at the destination for a
+    // just-dragged move (no slide needed — see `justDraggedFrom` above),
+    // otherwise at the origin, ready for the LaunchedEffect below to
+    // animate it forward.
+    var pieceAnim by remember(animatedMove) {
+        mutableStateOf(
+            animatedMove?.let { move ->
+                engine?.board?.getPiece(move.to)?.takeIf { it != Piece.NONE }
+                    ?.let { piece -> PieceAnimation(piece, move.from, move.to) }
+            },
+        )
+    }
+    val animatedOffset = remember(animatedMove) {
+        val startSquare = animatedMove?.let { if (it.from == justDraggedFrom) it.to else it.from }
+        Animatable(startSquare?.let(::pixelCenterOf) ?: Offset.Zero, Offset.VectorConverter)
+    }
     var lastWrongAttempt by remember { mutableStateOf<Move?>(null) }
 
     LaunchedEffect(animatedMove) {
         val move = animatedMove ?: return@LaunchedEffect
-        val piece = engine?.board?.getPiece(move.to)?.takeIf { it != Piece.NONE } ?: return@LaunchedEffect
-        pieceAnim = PieceAnimation(piece, move.from, move.to)
-        if (move.from == justDraggedFrom) {
-            animatedOffset.snapTo(pixelCenterOf(move.to))
-        } else {
-            animatedOffset.snapTo(pixelCenterOf(move.from))
+        if (engine?.board?.getPiece(move.to) == Piece.NONE) return@LaunchedEffect
+        if (move.from != justDraggedFrom) {
             animatedOffset.animateTo(pixelCenterOf(move.to), tween(MOVE_ANIMATION_MS.toInt()))
         }
         justDraggedFrom = null
