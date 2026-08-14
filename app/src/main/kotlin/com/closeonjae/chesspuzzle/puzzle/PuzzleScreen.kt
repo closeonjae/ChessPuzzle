@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -613,80 +614,26 @@ private fun Board(
                         val row = if (flipped) 7 - displayRow else displayRow
                         val col = if (flipped) 7 - displayCol else displayCol
                         val square = squareAt(row, col)
-                        val isLight = (row + col) % 2 == 0
                         val piece = engine?.board?.getPiece(square) ?: Piece.NONE
-                        val isCapture = legalDestinations[square]
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .weight(1f)
-                                .background(
-                                    when {
-                                        square == selected -> SelectedSquare
-                                        isLight -> BoardLight
-                                        else -> BoardDark
-                                    },
-                                )
-                                .then(
-                                    // Last-moved from/to squares (user request): same
-                                    // translucent-wash treatment as the hint square below,
-                                    // drawn first so the hint tint wins if a square is
-                                    // somehow both at once.
-                                    if (square == lastMove?.from || square == lastMove?.to) {
-                                        Modifier.background(LastMoveTint)
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                                .then(
-                                    // Hint square (user request): not a full selection look
-                                    // — just a translucent color wash sitting between the
-                                    // square's own background and the piece drawn on top of
-                                    // it (a second .background() layers over the first but
-                                    // still stays behind the piece, which is this Box's
-                                    // actual child content).
-                                    if (square == hintSquare) Modifier.background(HintTint) else Modifier,
-                                )
-                                .then(
-                                    when (isCapture) {
-                                        // Hollow ring inscribed in the square, stroke width
-                                        // 2/3 of the small dot's own radius (user request) —
-                                        // its outer edge stays where the old filled circle
-                                        // was, so the footprint is unchanged, just hollowed out.
-                                        true -> Modifier.drawWithContent {
-                                            val dotRadius = size.minDimension * 0.15f
-                                            val ringWidth = dotRadius * 2f / 3f
-                                            drawCircle(
-                                                color = LegalDot,
-                                                radius = size.minDimension / 2f - ringWidth / 2f,
-                                                style = Stroke(width = ringWidth),
-                                            )
-                                            drawContent()
-                                        }
-                                        false -> Modifier.drawWithContent {
-                                            drawCircle(color = LegalDot, radius = size.minDimension * 0.15f)
-                                            drawContent()
-                                        }
-                                        null -> Modifier
-                                    },
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
+                        // Every per-square decision is reduced to a plain
+                        // value *here*, in Board()'s own scope, and handed to
+                        // [BoardSquare] — see its doc for why the cells can't
+                        // read this state themselves.
+                        BoardSquare(
+                            piece = piece,
+                            isLight = (row + col) % 2 == 0,
+                            isSelected = square == selected,
+                            isLastMove = square == lastMove?.from || square == lastMove?.to,
+                            isHint = square == hintSquare,
+                            isCapture = legalDestinations[square],
                             // Hidden at its origin while dragged, at both ends of an
                             // in-flight move animation, and at both ends of a still-
                             // pending opponent reply (user request) — the floating
                             // overlays below are drawing that same piece there instead.
-                            if (piece != Piece.NONE && square != dragOriginSquare &&
+                            showPiece = piece != Piece.NONE && square != dragOriginSquare &&
                                 square != pieceAnim?.from && square != pieceAnim?.to &&
-                                square != pendingOpponentReply?.from && square != pendingOpponentReply?.to
-                            ) {
-                                PieceIcon(
-                                    pieceType = piece.pieceType,
-                                    isWhite = piece.pieceSide == Side.WHITE,
-                                    modifier = Modifier.fillMaxSize(0.82f),
-                                )
-                            }
-                        }
+                                square != pendingOpponentReply?.from && square != pendingOpponentReply?.to,
+                        )
                     }
                 }
             }
@@ -759,6 +706,106 @@ private fun Board(
                         .offset { IntOffset(topLeftPx.x.roundToInt(), topLeftPx.y.roundToInt()) },
                 )
             }
+        }
+    }
+}
+
+/**
+ * One of the board's 64 cells, extracted out of [Board]'s own loop purely so
+ * Compose can *skip* it.
+ *
+ * Measured from the Compose compiler's own stability report (`app-composables.txt`,
+ * `composeCompiler { reportsDestination = ... }`): [Board] takes `PuzzleEngine`
+ * and three `Move?`s, all of which the compiler marks **unstable** — chesslib's
+ * `Move` is a mutable Java class and `PuzzleEngine` wraps a mutable `Board`,
+ * and neither is ours to annotate. An unstable parameter means [Board] can
+ * never be skipped, so it re-ran on *every* `PuzzleUiState` emission (select a
+ * piece, play a move, reveal the opponent's reply, a rating update, a
+ * background next-puzzle fetch landing…). With all 64 cells inlined into that
+ * one restart scope, each of those emissions rebuilt 64 modifier chains and
+ * re-composed up to 32 `PieceIcon`s (each doing its own `painterResource`
+ * resource-table lookup) — even when a single square had actually changed.
+ *
+ * Every parameter here is deliberately a stable value type (enum / Boolean /
+ * `Boolean?`) computed by the caller, and there are no lambda parameters (taps
+ * are handled by the parent's single `pointerInput`), so the compiler marks
+ * this one `skippable` and equal arguments skip outright. [Board]'s scope
+ * still re-runs — 64 O(1) array lookups and comparisons — but only the squares
+ * whose appearance genuinely changed recompose.
+ *
+ * The `RowScope` receiver (rather than a `modifier` parameter) keeps
+ * `weight(1f)` inside the skipped body and keeps the caller from allocating a
+ * fresh `Modifier` per cell per pass; `RowScope` is `@Immutable`, so it
+ * doesn't cost the skip.
+ */
+@Composable
+private fun RowScope.BoardSquare(
+    piece: Piece,
+    isLight: Boolean,
+    isSelected: Boolean,
+    isLastMove: Boolean,
+    isHint: Boolean,
+    isCapture: Boolean?,
+    showPiece: Boolean,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .weight(1f)
+            .background(
+                when {
+                    isSelected -> SelectedSquare
+                    isLight -> BoardLight
+                    else -> BoardDark
+                },
+            )
+            .then(
+                // Last-moved from/to squares (user request): same
+                // translucent-wash treatment as the hint square below,
+                // drawn first so the hint tint wins if a square is
+                // somehow both at once.
+                if (isLastMove) Modifier.background(LastMoveTint) else Modifier,
+            )
+            .then(
+                // Hint square (user request): not a full selection look
+                // — just a translucent color wash sitting between the
+                // square's own background and the piece drawn on top of
+                // it (a second .background() layers over the first but
+                // still stays behind the piece, which is this Box's
+                // actual child content).
+                if (isHint) Modifier.background(HintTint) else Modifier,
+            )
+            .then(
+                when (isCapture) {
+                    // Hollow ring inscribed in the square, stroke width
+                    // 2/3 of the small dot's own radius (user request) —
+                    // its outer edge stays where the old filled circle
+                    // was, so the footprint is unchanged, just hollowed out.
+                    true -> Modifier.drawWithContent {
+                        val dotRadius = size.minDimension * 0.15f
+                        val ringWidth = dotRadius * 2f / 3f
+                        drawCircle(
+                            color = LegalDot,
+                            radius = size.minDimension / 2f - ringWidth / 2f,
+                            style = Stroke(width = ringWidth),
+                        )
+                        drawContent()
+                    }
+                    false -> Modifier.drawWithContent {
+                        drawCircle(color = LegalDot, radius = size.minDimension * 0.15f)
+                        drawContent()
+                    }
+                    null -> Modifier
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (showPiece) {
+            PieceIcon(
+                pieceType = piece.pieceType,
+                isWhite = piece.pieceSide == Side.WHITE,
+                modifier = Modifier.fillMaxSize(0.82f),
+            )
         }
     }
 }
