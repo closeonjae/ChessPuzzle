@@ -2,6 +2,7 @@ package com.closeonjae.chesspuzzle.core.puzzle
 
 import com.closeonjae.chesspuzzle.core.lichess.PuzzleAndGame
 import com.github.bhlangonijr.chesslib.Board
+import com.github.bhlangonijr.chesslib.Piece
 import com.github.bhlangonijr.chesslib.Side
 import com.github.bhlangonijr.chesslib.Square
 import com.github.bhlangonijr.chesslib.move.Move
@@ -52,6 +53,19 @@ sealed interface MoveOutcome {
 }
 
 /**
+ * One reviewable position of the puzzle's solution (user request: step back and
+ * forward through the moves once the puzzle is solved).
+ *
+ * [pieces] is the whole board's occupation indexed by `Square.ordinal` — a plain
+ * immutable snapshot rather than a chesslib [Board], deliberately: reviewing
+ * then never has to undo/redo on the solved engine's own board, so a walk
+ * backwards can't leave it in a different state than the one that was already
+ * reported to Lichess. [move] is the move that *led to* this position, so
+ * last-move highlighting keeps working while reviewing.
+ */
+data class ReviewStep(val pieces: List<Piece>, val move: Move?)
+
+/**
  * Drives one Lichess puzzle on top of chesslib (bhlangonijr/chesslib —
  * RESEARCH.md 8절). `puzzle.solution` alternates solver / opponent moves
  * starting with the SOLVER at index 0 — the position at the end of
@@ -76,6 +90,24 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
     val board: Board = Board()
     private var solutionIndex = 0
 
+    // Declared above the init block on purpose: property initializers and init
+    // blocks run in declaration order, and init records the very first step.
+    private val _reviewSteps = mutableListOf<ReviewStep>()
+
+    /**
+     * The solution as a sequence of positions (user request): index 0 is the
+     * puzzle's own starting position, then one entry per solution ply — the
+     * solver's moves and the auto-played opponent replies alike. `game.pgn`'s
+     * ~30-move opening replay is deliberately **not** recorded (user decision:
+     * review the puzzle, not the whole game), so a walk is the 3-5 moves that
+     * were actually played here.
+     */
+    val reviewSteps: List<ReviewStep> get() = _reviewSteps
+
+    private fun recordStep(move: Move?) {
+        _reviewSteps += ReviewStep(List(64) { board.getPiece(Square.squareAt(it)) }, move)
+    }
+
     val id: String get() = puzzle.id
     val rating: Int get() = puzzle.rating
     val isSolved: Boolean get() = solutionIndex >= puzzle.solution.size
@@ -89,6 +121,10 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
         for ((i, san) in sanMoves.withIndex()) {
             check(board.doMove(san)) { "Failed to replay '$san' at ply $i for puzzle ${puzzle.id}" }
         }
+        // Step 0 of the review walk. Its `move` is the PGN's own last move —
+        // the same one `lastMove` highlights before anything is played, so
+        // rewinding all the way back looks exactly like the puzzle's start.
+        recordStep(board.backup.lastOrNull()?.move)
     }
 
     /**
@@ -164,6 +200,7 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
             return MoveOutcome.WrongMove(played)
         }
         solutionIndex++
+        recordStep(played)
         val opponentReply = playOpponentReplyIfAny()
         return if (isSolved) MoveOutcome.Solved(played) else MoveOutcome.Correct(played, opponentReply)
     }
@@ -175,6 +212,7 @@ class PuzzleEngine(private val puzzle: PuzzleData) {
         val reply = Move(replyUci, board.sideToMove)
         check(board.doMove(reply, true)) { "Solution reply '$replyUci' was illegal for puzzle ${puzzle.id}" }
         solutionIndex++
+        recordStep(reply)
         return reply
     }
 }

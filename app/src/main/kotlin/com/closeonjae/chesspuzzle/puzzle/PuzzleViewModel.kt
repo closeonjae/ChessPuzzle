@@ -88,6 +88,15 @@ data class PuzzleUiState(
     val nextPuzzleError: Boolean = false,
     /** Set by a tap on a solved board before [nextEngine] is ready (user request) — shows a loading spinner (or, if [nextPuzzleError] is also true, a Retry button) instead of the tap looking ignored; the fetch finishing on its own then finishes the advance. */
     val awaitingNextPuzzle: Boolean = false,
+    /**
+     * Which of [PuzzleEngine.reviewSteps] the board is currently showing (user
+     * request: step back/forward through the solution once the puzzle is
+     * solved). Non-null only while [feedback] is [MoveFeedback.SOLVED] — set to
+     * the *last* step on solving, so the board keeps showing the finished
+     * position and the left arrow rewinds from there. Null at every other time,
+     * when the board renders the engine's live position instead.
+     */
+    val reviewPly: Int? = null,
 )
 
 /** Drives one puzzle screen's worth of state: fetch → tap/SAN input → report → fetch next (PLAN.md 4절). */
@@ -125,6 +134,7 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 nextEngine = null,
                 nextPuzzleError = false,
                 awaitingNextPuzzle = false,
+                reviewPly = null,
             )
         }
         viewModelScope.launch {
@@ -293,8 +303,31 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 nextEngine = null,
                 nextPuzzleError = false,
                 awaitingNextPuzzle = false,
+                reviewPly = null,
             )
         }
+    }
+
+    /**
+     * Step one ply back / forward through the solved puzzle's own moves (user
+     * request) — the ◀/▶ the side tabs turn into once solved. Clamped at both
+     * ends, so the arrows never wrap around; PuzzleScreen greys out whichever
+     * one has nowhere left to go.
+     *
+     * Clearing [PuzzleUiState.animatedMove] and [PuzzleUiState.pendingOpponentReply]
+     * here is what stops the solving move's slide animation from carrying into
+     * the review: Board() suppresses the static piece at both ends of an
+     * in-flight animation, which would blank the wrong squares once the board
+     * is showing an *earlier* position than the one that animation belongs to.
+     */
+    fun onReviewStep(delta: Int) {
+        val state = _uiState.value
+        if (state.feedback != MoveFeedback.SOLVED) return
+        val steps = state.engine?.reviewSteps ?: return
+        val current = state.reviewPly ?: return
+        val target = (current + delta).coerceIn(0, steps.lastIndex)
+        if (target == current) return
+        _uiState.update { it.copy(reviewPly = target, animatedMove = null, pendingOpponentReply = null) }
     }
 
     /** Tap-to-select-then-move (DESIGN.md 9절): first tap selects an own piece, second tap attempts the move. */
@@ -430,7 +463,15 @@ class PuzzleViewModel(private val repository: PuzzleRepository) : ViewModel() {
                 val state = _uiState.value
                 val win = state.hintUsedCount == 0 && !state.hadWrongAttempt
                 _uiState.update {
-                    val base = it.copy(selectedSquare = null, hintSquare = null, feedback = MoveFeedback.SOLVED)
+                    val base = it.copy(
+                        selectedSquare = null,
+                        hintSquare = null,
+                        feedback = MoveFeedback.SOLVED,
+                        // Arms the review walk at the finished position (user
+                        // request) — the board looks exactly as it did before,
+                        // and the side tabs become ◀/▶ from here.
+                        reviewPly = engine.reviewSteps.lastIndex.takeIf { i -> i >= 0 },
+                    )
                     if (outcome.solverMove != null) base.copy(animatedMove = outcome.solverMove) else base
                 }
                 reportSolvedAndPrefetchNext(engine.id, win)

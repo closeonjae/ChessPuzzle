@@ -1,5 +1,6 @@
 package com.closeonjae.chesspuzzle.core.puzzle
 
+import com.github.bhlangonijr.chesslib.Piece
 import com.github.bhlangonijr.chesslib.Side
 import com.github.bhlangonijr.chesslib.Square
 import kotlin.test.Test
@@ -174,6 +175,63 @@ class PuzzleEngineTest {
         engine.attemptCoordinates(Square.D8, Square.H4)
         assertEquals(Square.D8, engine.lastMove?.from)
         assertEquals(Square.H4, engine.lastMove?.to)
+    }
+
+    /**
+     * Review walk (user request: step back/forward through the solution once
+     * solved). One step for the puzzle's own starting position plus one per
+     * solution ply — the opening PGN replay is deliberately not recorded, so
+     * the walk is only ever the moves played here.
+     */
+    @Test
+    fun `reviewSteps records the start position plus one step per solution ply`() {
+        val engine = PuzzleEngine(
+            PuzzleData(
+                id = "test-ruy-lopez",
+                gamePgn = "e4 e5 Nf3 Nc6 Bb5",
+                initialPly = 5,
+                solution = listOf("a7a6", "b5a4", "g8f6"),
+                rating = 1200,
+            )
+        )
+        // Before anything is played: just the starting position, highlighting
+        // the PGN's own last move (Bb5) so a full rewind looks like the start.
+        assertEquals(1, engine.reviewSteps.size)
+        assertEquals("f1b5", engine.reviewSteps[0].move.toString())
+
+        engine.attemptCoordinates(Square.A7, Square.A6)
+        // The solver's move *and* the auto-played opponent reply each get one.
+        assertEquals(3, engine.reviewSteps.size)
+        assertEquals("a7a6", engine.reviewSteps[1].move.toString())
+        assertEquals("b5a4", engine.reviewSteps[2].move.toString())
+
+        engine.attemptSan("Nf6")
+        assertEquals(4, engine.reviewSteps.size)
+        assertEquals("g8f6", engine.reviewSteps[3].move.toString())
+    }
+
+    @Test
+    fun `reviewSteps snapshots hold the position as it was at that ply`() {
+        val engine = foolsMate()
+        val start = engine.reviewSteps[0]
+        assertEquals(Piece.BLACK_QUEEN, start.pieces[Square.D8.ordinal])
+        assertEquals(Piece.NONE, start.pieces[Square.H4.ordinal])
+
+        engine.attemptCoordinates(Square.D8, Square.H4)
+        val solved = engine.reviewSteps.last()
+        assertEquals(Piece.NONE, solved.pieces[Square.D8.ordinal])
+        assertEquals(Piece.BLACK_QUEEN, solved.pieces[Square.H4.ordinal])
+        // The earlier snapshot is a real snapshot, not a live view of the board.
+        assertEquals(Piece.BLACK_QUEEN, engine.reviewSteps[0].pieces[Square.D8.ordinal])
+    }
+
+    /** A wrong move is undone, so it must leave no trace in the review walk. */
+    @Test
+    fun `a wrong move does not add a review step`() {
+        val engine = foolsMate()
+        assertEquals(1, engine.reviewSteps.size)
+        assertIs<MoveOutcome.WrongMove>(engine.attemptSan("Nc6"))
+        assertEquals(1, engine.reviewSteps.size)
     }
 
     /**

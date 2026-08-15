@@ -163,9 +163,11 @@ fun PuzzleScreen(viewModel: PuzzleViewModel) {
                 pendingOpponentReply = state.pendingOpponentReply,
                 dimmed = dimmed,
                 boardSide = boardSide,
+                reviewPly = state.reviewPly,
                 onSquareTapped = viewModel::onSquareTapped,
                 onKeyboardTapped = launchMoveInput,
                 onHintTapped = viewModel::onHintTapped,
+                onReviewStep = viewModel::onReviewStep,
                 modifier = Modifier.align(Alignment.Center),
             )
 
@@ -303,17 +305,36 @@ private fun BoardRow(
     pendingOpponentReply: Move?,
     dimmed: Boolean,
     boardSide: Dp,
+    reviewPly: Int?,
     onSquareTapped: (Square) -> Unit,
     onKeyboardTapped: () -> Unit,
     onHintTapped: () -> Unit,
+    onReviewStep: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Once the puzzle is solved, the two side tabs become the review arrows
+    // (user request) — same slot, same size, same silhouette, so nothing on
+    // screen shifts; only what they do changes. This also settles what those
+    // two tabs used to do on a solved board: the hint tab was inert (its
+    // handler returns early once solved) and the keyboard tab still opened the
+    // SAN input for a puzzle that could no longer accept a move.
+    val lastPly = engine?.reviewSteps?.lastIndex ?: -1
+    val reviewing = reviewPly != null && engine != null && lastPly >= 0
+
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        HintTab(boardSide, onHintTapped)
+        if (reviewing) {
+            ArrowTab(boardSide, "◀", HintTabShape, enabled = reviewPly > 0) { onReviewStep(-1) }
+        } else {
+            HintTab(boardSide, onHintTapped)
+        }
         Spacer(Modifier.width(Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart))
-        Board(engine, selected, hintSquare, animatedMove, wrongAttempt, pendingOpponentReply, dimmed, boardSide, onSquareTapped)
+        Board(engine, selected, hintSquare, animatedMove, wrongAttempt, pendingOpponentReply, dimmed, boardSide, reviewPly, onSquareTapped)
         Spacer(Modifier.width(Dimens.BoardRowGap + Dimens.KeyboardTabMarginStart))
-        KeyboardTab(boardSide, onKeyboardTapped)
+        if (reviewing) {
+            ArrowTab(boardSide, "▶", HalfMoonShape, enabled = reviewPly < lastPly) { onReviewStep(1) }
+        } else {
+            KeyboardTab(boardSide, onKeyboardTapped)
+        }
     }
 }
 
@@ -341,8 +362,15 @@ private fun Board(
     pendingOpponentReply: Move?,
     dimmed: Boolean,
     boardSide: Dp,
+    reviewPly: Int?,
     onSquareTapped: (Square) -> Unit,
 ) {
+    // Non-null only while stepping through a solved puzzle (user request).
+    // Everything the board draws from the position — the pieces themselves and
+    // the last-move highlight — reads out of this snapshot instead of the live
+    // engine while it is set. Board *orientation* deliberately still comes from
+    // solverSide, so rewinding never spins the board.
+    val reviewStep = reviewPly?.let { engine?.reviewSteps?.getOrNull(it) }
     // Flip to the solver's own perspective when the solver is Black (own
     // pieces nearest the bottom) — user request. Only the *display*
     // position is mirrored: which true row/col is drawn at each grid
@@ -377,8 +405,10 @@ private fun Board(
         }
     }
     // Last-moved from/to squares (user request) — reused the color that
-    // used to be hintTint's, once hint moved to red (see Color.kt).
-    val lastMove = engine?.lastMove
+    // used to be hintTint's, once hint moved to red (see Color.kt). While
+    // reviewing, this is the move that produced the step being shown, not the
+    // engine's live last move (which is always the puzzle's final move).
+    val lastMove = if (reviewStep != null) reviewStep.move else engine?.lastMove
 
     val density = LocalDensity.current
     val boardSidePx = with(density) { boardSide.toPx() }
@@ -614,7 +644,8 @@ private fun Board(
                         val row = if (flipped) 7 - displayRow else displayRow
                         val col = if (flipped) 7 - displayCol else displayCol
                         val square = squareAt(row, col)
-                        val piece = engine?.board?.getPiece(square) ?: Piece.NONE
+                        val piece = reviewStep?.pieces?.get(square.ordinal)
+                            ?: engine?.board?.getPiece(square) ?: Piece.NONE
                         // Every per-square decision is reduced to a plain
                         // value *here*, in Board()'s own scope, and handed to
                         // [BoardSquare] — see its doc for why the cells can't
@@ -832,6 +863,45 @@ private fun KeyboardTab(boardSide: Dp, onTapped: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(text = "⌨", style = AppType.caption, color = Accent)
+    }
+}
+
+/**
+ * What [HintTab]/[KeyboardTab] turn into once the puzzle is solved (user
+ * request): step one move back (◀, left slot) or forward (▶, right slot)
+ * through the solution. Takes the [shape] of whichever tab it stands in for,
+ * so the row's silhouette is unchanged — only the glyph and the action differ.
+ *
+ * [enabled] drives the glyph color only — the arrow keeps its `clickable` even
+ * at the end of the walk, deliberately. A solved screen advances to the next
+ * puzzle on a tap *anywhere*, so an arrow that dropped its handler would let a
+ * dead-end tap fall through to that gesture: pressing ◀ at the start of the
+ * walk would skip the puzzle instead of doing nothing, and there is no way
+ * back once it does. Swallowing the tap here and letting
+ * `PuzzleViewModel.onReviewStep` clamp keeps a dead end genuinely inert.
+ */
+@Composable
+private fun ArrowTab(
+    boardSide: Dp,
+    glyph: String,
+    shape: Shape,
+    enabled: Boolean,
+    onTapped: () -> Unit,
+) {
+    val tabHeight = boardSide * Dimens.KeyboardTabHeightRatio
+    Box(
+        modifier = Modifier
+            .size(width = Dimens.KeyboardTabWidth, height = tabHeight)
+            .clip(shape)
+            .background(Surface)
+            .clickable(onClick = onTapped),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = glyph,
+            style = AppType.caption,
+            color = if (enabled) Accent else TextSecondary.copy(alpha = 0.35f),
+        )
     }
 }
 
