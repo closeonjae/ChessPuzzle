@@ -155,6 +155,21 @@ private class FakeOpeningRepository(
                 move("c6d4", "Nd4", 7_100, 380, 6_400, ExplorerOpening("C61", "Ruy Lopez: Bird Variation")),
             ),
         ),
+        // Three taps from the start (e4, c5, Nf3) and carrying a deliberately
+        // long name, so the top label's shrink-then-ellipsize path can be
+        // looked at. The name is a real ECO one but belongs a few moves deeper
+        // than this position — it is here for the layout, not the chess.
+        "e2e4,c7c5,g1f3" to ExplorerResponse(
+            opening = ExplorerOpening("B90", "Sicilian Defense: Najdorf Variation, English Attack"),
+            white = 1_900_000, draws = 100_000, black = 1_700_000,
+            moves = listOf(
+                move("d7d6", "d6", 900_000, 48_000, 820_000),
+                move("b8c6", "Nc6", 520_000, 29_000, 470_000),
+                move("e7e6", "e6", 380_000, 21_000, 350_000),
+                move("g8f6", "Nf6", 61_000, 3_400, 55_000),
+                move("g7g6", "g6", 39_000, 2_100, 36_000),
+            ),
+        ),
         // Deliberately named but with no games recorded, to exercise the
         // "Sicilian Defense: Najdorf" long-name label against a real position.
         "e2e4,c7c5" to ExplorerResponse(

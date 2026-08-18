@@ -23,7 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -211,13 +213,28 @@ private fun OpeningNameLabel(state: OpeningUiState, modifier: Modifier = Modifie
             modifier = Modifier.fillMaxWidth(OpeningDimens.NameWidthLine1),
         )
         if (variation != null) {
+            // Shrink once if it doesn't fit, then ellipsize (user choice).
+            // Keyed on the text so a new position starts at full size again
+            // rather than inheriting the previous name's shrink; a single step
+            // down means at most one extra layout pass.
+            var style by remember(variation) { mutableStateOf(OpeningType.openingVariation) }
             Text(
                 text = variation,
-                style = OpeningType.openingVariation,
+                style = style,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
+                onTextLayout = { layout ->
+                    // hasVisualOverflow, not didOverflowWidth: once the line is
+                    // ellipsized it *fits* the constraint, so didOverflowWidth
+                    // reads false and the shrink never fired (measured — the
+                    // long name still truncated at 11sp's ~27 characters).
+                    if (layout.hasVisualOverflow && style == OpeningType.openingVariation) {
+                        style = OpeningType.openingVariationSmall
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(OpeningDimens.NameWidthLine2),
             )
         }

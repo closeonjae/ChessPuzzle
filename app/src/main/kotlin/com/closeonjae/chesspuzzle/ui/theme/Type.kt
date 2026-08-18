@@ -28,6 +28,16 @@ object OpeningType {
     val openingFamily = TextStyle(fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold)
     /** Variation, line 2 of the top label. */
     val openingVariation = TextStyle(fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.Normal)
+
+    /**
+     * The variation line when it doesn't fit at [openingVariation]'s size —
+     * about 27 characters is all the round screen's chord allows up there, and
+     * names like "Najdorf Variation, English Attack" run past it.
+     *
+     * Same `lineHeight`, deliberately: the block's height must not change with
+     * the size, or the name would shift up and down as the line is walked.
+     */
+    val openingVariationSmall = openingVariation.copy(fontSize = 9.sp)
     /**
      * The rank digit inside a candidate-move badge. 10sp is the largest a
      * single digit can be inside a badge that fits a ~21dp square.
