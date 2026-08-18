@@ -61,6 +61,7 @@ import com.closeonjae.chesspuzzle.ui.board.isLightSquare
 import com.closeonjae.chesspuzzle.ui.board.rowColOf
 import com.closeonjae.chesspuzzle.ui.board.squareAt
 import com.closeonjae.chesspuzzle.ui.theme.AppType
+import com.closeonjae.chesspuzzle.ui.theme.ArrowTint
 import com.closeonjae.chesspuzzle.ui.theme.Background
 import com.closeonjae.chesspuzzle.ui.theme.CandidateMarker
 import com.closeonjae.chesspuzzle.ui.theme.Dimens
@@ -364,8 +365,11 @@ private fun OpeningBoard(state: OpeningUiState, boardSide: Dp, onSquareTapped: (
  * needs three times the ink on a board whose squares are about 21dp, and the
  * pair of endpoints identifies the move either way.
  *
- * Same translucent black as the badges, so the whole candidate overlay reads as
- * one layer sitting on the position rather than as part of it.
+ * Centre to centre, thick, and translucent red (user request). The three go
+ * together: running the full square-to-square span puts the tail on top of the
+ * piece being pointed out, so the tint has to be seen *through* rather than
+ * cover it, and the extra weight is what keeps a 50%-alpha line legible over
+ * both square colours and the pieces.
  */
 @Composable
 private fun CandidateArrows(candidates: List<CandidateMove>) {
@@ -374,7 +378,7 @@ private fun CandidateArrows(candidates: List<CandidateMove>) {
         val cell = size.width / 8f
         val headLength = cell * OpeningDimens.ArrowHeadLengthRatio
         val headHalfWidth = cell * OpeningDimens.ArrowHeadWidthRatio / 2f
-        val badgeClearance = cell * (OpeningDimens.CandidateMarkerRatio / 2f + OpeningDimens.ArrowHeadGapRatio)
+        val badgeClearance = cell * (OpeningDimens.CandidateMarkerRatio / 2f + OpeningDimens.ArrowBadgeGapRatio)
         candidates.forEach { candidate ->
             val start = centerOf(candidate.from, cell)
             val end = centerOf(candidate.to, cell)
@@ -382,12 +386,11 @@ private fun CandidateArrows(candidates: List<CandidateMove>) {
             val length = span.getDistance()
             if (length < 1f) return@forEach
             val dir = span / length
-            // Clear of the piece it starts on, and stopping short of the badge
-            // rather than under it — an arrow through the number would make
-            // both unreadable.
-            val tail = start + dir * (cell * OpeningDimens.ArrowTailInsetRatio)
-            val tip = end - dir * (cell * (OpeningDimens.CandidateMarkerRatio / 2f + OpeningDimens.ArrowHeadGapRatio))
-            if ((tip - tail).getDistance() < headLength) return@forEach
+            // Centre to centre at both ends (user request) — no inset at the
+            // tail, no gap before the badge at the tip.
+            val tail = start
+            val tip = end
+            if (length < headLength) return@forEach
             val base = tip - dir * headLength
             // Draw the shaft in pieces, leaving a gap wherever it would run
             // through *another* candidate's badge. Two moves from the same
@@ -426,7 +429,7 @@ private fun CandidateArrows(candidates: List<CandidateMove>) {
                     lineTo(base.x - perpendicular.x * headHalfWidth, base.y - perpendicular.y * headHalfWidth)
                     close()
                 },
-                color = CandidateMarker,
+                color = ArrowTint,
             )
         }
     }
@@ -439,7 +442,7 @@ private fun DrawScope.drawArrowShaft(tail: Offset, dir: Offset, from: Float, to:
     val stroke = cell * OpeningDimens.ArrowStrokeRatio
     if (to - from <= stroke) return
     drawLine(
-        color = CandidateMarker,
+        color = ArrowTint,
         start = tail + dir * from,
         end = tail + dir * to,
         strokeWidth = stroke,

@@ -61,5 +61,14 @@ val WdlWhite = Color(0xFFEDF3FA)
 val WdlDraw = Color(0xFF8A8178)
 /** Black-wins share. 3.13:1 against [WdlDraw]; true black would vanish into the OLED background instead of reading as a segment. */
 val WdlBlack = Color(0xFF3E3A36)
+/**
+ * Candidate-move arrows (user request: 빨간 색 50% 반투명). Translucent on
+ * purpose — the arrow now runs centre to centre, so its tail lies on top of the
+ * very piece it is pointing out, and it has to be seen through rather than
+ * cover it. Same 50%-over-the-board language as [LegalDot] and [HintTint], in
+ * the red those already use.
+ */
+val ArrowTint = Color(0x80FF0000) // rgba(255,0,0,0.5)
+
 /** Outline of a standalone bar. [WdlBlack] is only 1.87:1 against the background, so this (3.6:1) is what shows where the bar ends. Unused on the ECO chip's bar, whose extent is the chip itself. */
 val WdlFrame = Color(0xFF6D6459)

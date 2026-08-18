@@ -46,16 +46,17 @@ object OpeningDimens {
     val MarkerBorderWidth = 1.dp
 
     // Candidate arrows. All fractions of a square, so they scale with the board.
+    // They run square centre to square centre (user request) — no insets at
+    // either end, which is why the tint is translucent: the tail sits on the
+    // piece it points out and has to be seen through rather than hide it.
     /** Arrow line thickness. */
-    const val ArrowStrokeRatio = 0.07f
-    /** How far the arrow starts from its origin square's centre — clear of the piece standing there. */
-    const val ArrowTailInsetRatio = 0.34f
-    /** Gap between the arrow tip and the badge it points at. */
-    const val ArrowHeadGapRatio = 0.06f
+    const val ArrowStrokeRatio = 0.16f
     /** Arrowhead length. */
-    const val ArrowHeadLengthRatio = 0.17f
-    /** Arrowhead width. */
-    const val ArrowHeadWidthRatio = 0.22f
+    const val ArrowHeadLengthRatio = 0.26f
+    /** Arrowhead width. Wider than the shaft or the head disappears into it. */
+    const val ArrowHeadWidthRatio = 0.38f
+    /** Clearance kept around *other* candidates' badges, so a shaft passing one doesn't cross its digit. */
+    const val ArrowBadgeGapRatio = 0.06f
     /** Win/draw/loss bar thickness. Thicker than the 3dp draft now that it is a long bar on its own rather than a chip's edge. */
     val WdlBarHeight = 4.dp
     /** Gap between the board's bottom edge and the bar (user request: 체스판에 가깝게). */
