@@ -1,4 +1,4 @@
-package com.closeonjae.chesspuzzle.puzzle
+package com.closeonjae.chesspuzzle.ui.board
 
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable

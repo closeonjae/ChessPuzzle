@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Debug-only manifest fragment (Gradle merges src/debug/* into the debug
-  build variant automatically) — adds a preview entry point for visually
-  checking PuzzleScreen without a completed Lichess sign-in. Never present
-  in a release build.
+  build variant automatically) — adds preview entry points for visually
+  checking the puzzle and opening screens without a completed Lichess
+  sign-in. Never present in a release build.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
@@ -13,6 +13,15 @@
             android:theme="@android:style/Theme.DeviceDefault">
             <intent-filter>
                 <action android:name="com.closeonjae.chesspuzzle.PREVIEW_PUZZLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".DebugOpeningPreviewActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="com.closeonjae.chesspuzzle.PREVIEW_OPENING" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>

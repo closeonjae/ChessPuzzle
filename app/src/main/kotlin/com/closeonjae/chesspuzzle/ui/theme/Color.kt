@@ -44,3 +44,16 @@ val LastMoveTint = Color(0x60FFFF00) // rgba(255,255,0,0.375)
 // red 50% -> yellow 50% -> yellow 25% -> yellow 37.5% -> back to red (same
 // 37.5% alpha), once last-moveTint above took over yellow for its own use.
 val HintTint = Color(0x60FF0000) // rgba(255,0,0,0.375)
+
+// Opening explorer (DESIGN.md 9.2절). Contrast ratios in the comments were
+// computed against this file's own values, not eyeballed.
+/** 1dp rim around the candidate-move badge. Accent alone is 3.77:1 on light squares but only 1.46:1 on dark ones; this reads 15.3:1 / 5.9:1 against them, so the badge keeps its shape on both. */
+val MarkerHalo = Color(0xFF1A1A1A)
+/** White-wins share of a win/draw/loss bar — the same value as [BoardLight], reused rather than a second near-white. */
+val WdlWhite = Color(0xFFEDF3FA)
+/** Draw share. 3.2:1 against [WdlWhite]. */
+val WdlDraw = Color(0xFF8A8178)
+/** Black-wins share. 3.13:1 against [WdlDraw]; true black would vanish into the OLED background instead of reading as a segment. */
+val WdlBlack = Color(0xFF3E3A36)
+/** Outline of a standalone bar. [WdlBlack] is only 1.87:1 against the background, so this (3.6:1) is what shows where the bar ends. Unused on the ECO chip's bar, whose extent is the chip itself. */
+val WdlFrame = Color(0xFF6D6459)

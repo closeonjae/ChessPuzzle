@@ -53,6 +53,20 @@ class LichessApiClient(
     }
 
     /**
+     * GET /api/account — the signed-in user's profile. Only called by the
+     * opening screen, once per app run, to work out which explorer rating
+     * bands count as "my level" (PLAN.md 9.3절).
+     */
+    fun fetchAccount(accessToken: String): AccountResponse {
+        val request = Request.Builder()
+            .url("https://lichess.org/api/account")
+            .header("Authorization", "Bearer $accessToken")
+            .get()
+            .build()
+        return execute(request)
+    }
+
+    /**
      * GET /api/puzzle/batch/{angle} — a batch of puzzles picked against the
      * signed-in user's own puzzle rating. `angle=mix` is Lichess's
      * recommended catch-all theme.

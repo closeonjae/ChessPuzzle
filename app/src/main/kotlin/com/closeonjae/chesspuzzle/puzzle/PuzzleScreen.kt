@@ -12,9 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -33,17 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
@@ -55,10 +47,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.CompactButton
@@ -66,19 +56,19 @@ import androidx.wear.compose.material3.Text
 import com.closeonjae.chesspuzzle.R
 import com.closeonjae.chesspuzzle.core.puzzle.PuzzleEngine
 import com.closeonjae.chesspuzzle.input.rememberMoveInputLauncher
+import com.closeonjae.chesspuzzle.ui.board.BoardSquare
+import com.closeonjae.chesspuzzle.ui.board.HalfMoonShape
+import com.closeonjae.chesspuzzle.ui.board.HintTabShape
+import com.closeonjae.chesspuzzle.ui.board.PieceIcon
+import com.closeonjae.chesspuzzle.ui.board.rowColOf
+import com.closeonjae.chesspuzzle.ui.board.squareAt
 import com.closeonjae.chesspuzzle.ui.theme.Accent
 import com.closeonjae.chesspuzzle.ui.theme.AppType
 import com.closeonjae.chesspuzzle.ui.theme.Background
-import com.closeonjae.chesspuzzle.ui.theme.BoardDark
-import com.closeonjae.chesspuzzle.ui.theme.BoardLight
 import com.closeonjae.chesspuzzle.ui.theme.Dimens
 import com.closeonjae.chesspuzzle.ui.theme.ErrorColor
-import com.closeonjae.chesspuzzle.ui.theme.HintTint
-import com.closeonjae.chesspuzzle.ui.theme.LastMoveTint
-import com.closeonjae.chesspuzzle.ui.theme.LegalDot
 import com.closeonjae.chesspuzzle.ui.theme.RatingDown
 import com.closeonjae.chesspuzzle.ui.theme.RatingUp
-import com.closeonjae.chesspuzzle.ui.theme.SelectedSquare
 import com.closeonjae.chesspuzzle.ui.theme.Success
 import com.closeonjae.chesspuzzle.ui.theme.Surface
 import com.closeonjae.chesspuzzle.ui.theme.TextSecondary
@@ -741,116 +731,6 @@ private fun Board(
     }
 }
 
-/**
- * One of the board's 64 cells, extracted out of [Board]'s own loop purely so
- * Compose can *skip* it.
- *
- * Measured from the Compose compiler's own stability report (`app-composables.txt`,
- * `composeCompiler { reportsDestination = ... }`): [Board] takes `PuzzleEngine`
- * and three `Move?`s, all of which the compiler marks **unstable** — chesslib's
- * `Move` is a mutable Java class and `PuzzleEngine` wraps a mutable `Board`,
- * and neither is ours to annotate. An unstable parameter means [Board] can
- * never be skipped, so it re-ran on *every* `PuzzleUiState` emission (select a
- * piece, play a move, reveal the opponent's reply, a rating update, a
- * background next-puzzle fetch landing…). With all 64 cells inlined into that
- * one restart scope, each of those emissions rebuilt 64 modifier chains and
- * re-composed up to 32 `PieceIcon`s (each doing its own `painterResource`
- * resource-table lookup) — even when a single square had actually changed.
- *
- * Every parameter here is deliberately a stable value type (enum / Boolean /
- * `Boolean?`) computed by the caller, and there are no lambda parameters (taps
- * are handled by the parent's single `pointerInput`), so the compiler marks
- * this one `skippable` and equal arguments skip outright. [Board]'s scope
- * still re-runs — 64 O(1) array lookups and comparisons — but only the squares
- * whose appearance genuinely changed recompose.
- *
- * The `RowScope` receiver (rather than a `modifier` parameter) keeps
- * `weight(1f)` inside the skipped body and keeps the caller from allocating a
- * fresh `Modifier` per cell per pass; `RowScope` is `@Immutable`, so it
- * doesn't cost the skip.
- */
-@Composable
-private fun RowScope.BoardSquare(
-    piece: Piece,
-    isLight: Boolean,
-    isSelected: Boolean,
-    isLastMove: Boolean,
-    isHint: Boolean,
-    isCapture: Boolean?,
-    showPiece: Boolean,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxHeight()
-            .weight(1f)
-            .background(
-                when {
-                    isSelected -> SelectedSquare
-                    isLight -> BoardLight
-                    else -> BoardDark
-                },
-            )
-            .then(
-                // Last-moved from/to squares (user request): same
-                // translucent-wash treatment as the hint square below,
-                // drawn first so the hint tint wins if a square is
-                // somehow both at once.
-                if (isLastMove) Modifier.background(LastMoveTint) else Modifier,
-            )
-            .then(
-                // Hint square (user request): not a full selection look
-                // — just a translucent color wash sitting between the
-                // square's own background and the piece drawn on top of
-                // it (a second .background() layers over the first but
-                // still stays behind the piece, which is this Box's
-                // actual child content).
-                if (isHint) Modifier.background(HintTint) else Modifier,
-            )
-            .then(
-                when (isCapture) {
-                    // Hollow ring inscribed in the square, stroke width
-                    // 2/3 of the small dot's own radius (user request) —
-                    // its outer edge stays where the old filled circle
-                    // was, so the footprint is unchanged, just hollowed out.
-                    true -> Modifier.drawWithContent {
-                        val dotRadius = size.minDimension * 0.15f
-                        val ringWidth = dotRadius * 2f / 3f
-                        drawCircle(
-                            color = LegalDot,
-                            radius = size.minDimension / 2f - ringWidth / 2f,
-                            style = Stroke(width = ringWidth),
-                        )
-                        drawContent()
-                    }
-                    false -> Modifier.drawWithContent {
-                        drawCircle(color = LegalDot, radius = size.minDimension * 0.15f)
-                        drawContent()
-                    }
-                    null -> Modifier
-                },
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (showPiece) {
-            PieceIcon(
-                pieceType = piece.pieceType,
-                isWhite = piece.pieceSide == Side.WHITE,
-                modifier = Modifier.fillMaxSize(0.82f),
-            )
-        }
-    }
-}
-
-/**
- * row 0 = rank 8 (top of an unflipped board), col 0 = file A. Integer math
- * off chesslib's enum layout (A1 = ordinal 0 … H8 = 63, rank = ordinal/8,
- * file = ordinal%8) instead of building and parsing the square's name
- * string — this and [squareAt] run per gesture event and per square in
- * Board()'s 8×8 loop.
- */
-private fun rowColOf(square: Square): Pair<Int, Int> =
-    (7 - square.rank.ordinal) to square.file.ordinal
-
 @Composable
 private fun KeyboardTab(boardSide: Dp, onTapped: () -> Unit) {
     val tabHeight = boardSide * Dimens.KeyboardTabHeightRatio
@@ -931,109 +811,3 @@ private fun HintTab(boardSide: Dp, onTapped: () -> Unit) {
         )
     }
 }
-
-/**
- * Small rounded corners on the left (flush against the board), a much
- * bigger elliptical curve on the right — matching the design mockup's
- * `.kbd-tab` CSS exactly (DESIGN.md 산출물 HTML): `border-radius: 3px 19px
- * 19px 3px / 3px 46px 46px 3px` on a 22×92 box. The two right corners'
- * radii (19 horizontal, 46 vertical) aren't independent of the left ones —
- * 3+19 = 22 (the box's own width) and 46+46 = 92 (its own height), so the
- * curve starts the instant the small left corner ends, with zero flat run
- * left over anywhere on the outline.
- *
- * `RoundedCornerShape` can't produce this: each of its corners takes a
- * single circular radius, clamped to fit within *both* adjacent edges — on
- * a tall, narrow box like this one that clamp caps the radius at roughly
- * half the *width* regardless of what's requested, leaving a long straight
- * run in the middle of the right edge (confirmed on an emulator
- * screenshot, not just reasoned about). A custom outline tracing an
- * explicit ellipse is the only way to reproduce the CSS shape.
- */
-private object HalfMoonShape : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val w = size.width
-        val h = size.height
-        val leftCornerRadius = (density.density * 3f).coerceAtMost(minOf(w, h) / 2f)
-        // Right-side ellipse: rx = w - leftCornerRadius (reaches the full
-        // right edge, same as the CSS corner radii summing to the box
-        // width), ry = h/2 so its top and bottom quarters meet exactly at
-        // the vertical midpoint.
-        val rightRx = (w - leftCornerRadius).coerceAtLeast(0f)
-        val path = Path().apply {
-            moveTo(leftCornerRadius, 0f)
-            // Traced top-center → rightmost point → bottom-center as one
-            // continuous curve, starting exactly where the moveTo left off
-            // (no straight segment in between).
-            arcTo(
-                rect = Rect(left = w - 2 * rightRx, top = 0f, right = w, bottom = h),
-                startAngleDegrees = -90f,
-                sweepAngleDegrees = 180f,
-                forceMoveTo = false,
-            )
-            lineTo(leftCornerRadius, h)
-            arcTo(
-                rect = Rect(left = 0f, top = h - 2 * leftCornerRadius, right = 2 * leftCornerRadius, bottom = h),
-                startAngleDegrees = 90f,
-                sweepAngleDegrees = 90f,
-                forceMoveTo = false,
-            )
-            lineTo(0f, leftCornerRadius)
-            arcTo(
-                rect = Rect(left = 0f, top = 0f, right = 2 * leftCornerRadius, bottom = 2 * leftCornerRadius),
-                startAngleDegrees = 180f,
-                sweepAngleDegrees = 90f,
-                forceMoveTo = false,
-            )
-            close()
-        }
-        return Outline.Generic(path)
-    }
-}
-
-/**
- * The exact horizontal mirror of [HalfMoonShape] — small corners on the
- * right (flush against the board), the big curve on the left (facing the
- * screen's edge). Every coordinate is [HalfMoonShape]'s own reflected
- * across x → w−x; each `arcTo`'s start angle and rect follow the same
- * reflection, and its sweep is negated (mirroring reverses the arc's
- * winding direction) — verified by hand that each segment's start/end
- * point lands exactly on the previous/next segment's, same as the
- * original.
- */
-private object HintTabShape : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val w = size.width
-        val h = size.height
-        val cornerRadius = (density.density * 3f).coerceAtMost(minOf(w, h) / 2f)
-        val bigRx = (w - cornerRadius).coerceAtLeast(0f)
-        val path = Path().apply {
-            moveTo(w - cornerRadius, 0f)
-            arcTo(
-                rect = Rect(left = 0f, top = 0f, right = 2 * bigRx, bottom = h),
-                startAngleDegrees = -90f,
-                sweepAngleDegrees = -180f,
-                forceMoveTo = false,
-            )
-            lineTo(w - cornerRadius, h)
-            arcTo(
-                rect = Rect(left = w - 2 * cornerRadius, top = h - 2 * cornerRadius, right = w, bottom = h),
-                startAngleDegrees = 90f,
-                sweepAngleDegrees = -90f,
-                forceMoveTo = false,
-            )
-            lineTo(w, cornerRadius)
-            arcTo(
-                rect = Rect(left = w - 2 * cornerRadius, top = 0f, right = w, bottom = 2 * cornerRadius),
-                startAngleDegrees = 0f,
-                sweepAngleDegrees = -90f,
-                forceMoveTo = false,
-            )
-            close()
-        }
-        return Outline.Generic(path)
-    }
-}
-
-/** Inverse of [rowColOf] — see its doc for the row/col convention and why this is index math, not string building. */
-private fun squareAt(row: Int, col: Int): Square = Square.squareAt((7 - row) * 8 + col)

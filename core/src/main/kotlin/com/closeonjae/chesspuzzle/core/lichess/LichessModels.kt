@@ -95,3 +95,45 @@ data class PuzzleBatchSolveResponse(
     val glicko: PuzzleGlicko? = null,
     val rounds: List<PuzzleRound> = emptyList(),
 )
+
+/**
+ * One perf (time control) entry of `GET /api/account`. Only the two fields the
+ * app reads are modeled; [games] matters because Lichess reports a
+ * provisional 1500 for perfs the account has never actually played.
+ */
+@Serializable
+data class PerfRating(
+    val rating: Int? = null,
+    val games: Int = 0,
+)
+
+@Serializable
+data class AccountPerfs(
+    val rapid: PerfRating? = null,
+    val blitz: PerfRating? = null,
+    val classical: PerfRating? = null,
+)
+
+@Serializable
+data class AccountResponse(
+    val id: String,
+    val username: String,
+    val perfs: AccountPerfs? = null,
+) {
+    /**
+     * The rating the opening explorer's band filter is derived from (PLAN.md
+     * 9.3절). Rapid first, then blitz, then classical — and only perfs that
+     * have actually been played, since an unplayed perf still reports a
+     * provisional 1500 that would silently pick the wrong band. Null when the
+     * account has no rated game at all; the caller falls back to
+     * [DEFAULT_GAME_RATING].
+     *
+     * The puzzle rating is deliberately not used here: it is a different
+     * Glicko pool from game ratings, so it does not map onto the explorer's
+     * game-rating bands.
+     */
+    val gameRating: Int?
+        get() = listOfNotNull(perfs?.rapid, perfs?.blitz, perfs?.classical)
+            .firstOrNull { it.games > 0 }
+            ?.rating
+}

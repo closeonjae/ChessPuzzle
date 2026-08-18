@@ -1,0 +1,577 @@
+<title>Opening Explorer 화면 시안</title>
+
+<style>
+/* ============================================================================
+   토큰 — 앱 값은 DESIGN.md 2·3·4절에서 그대로 옮겨온다(단일 소스).
+   페이지 크롬(면 바깥)만 이 문서 자체의 값이며, 라이트/다크 양쪽을 정의한다.
+   워치 면(.face) 자체는 항상 OLED 블랙 — 실제 기기 화면이라 테마와 무관하다.
+   ========================================================================= */
+:root{
+  /* 앱 토큰 (DESIGN.md 2절) */
+  --background:#000000; --surface:#1C1B1A;
+  --text-primary:#F5F1EA; --text-secondary:#A69C8D;
+  --accent:#C15F3C; --error:#D14343;
+  --board-light:#EDF3FA; --board-dark:#5A99F2; --selected:#A4C6F6;
+  --legal-dot:rgba(0,0,0,.55);
+  --halo:#1A1A1A;                       /* 마커 외곽 1dp 고리 — 두 칸 색 모두에 대비 확보 */
+  /* 승/무/패 막대 (9절 신규) */
+  --wdl-white:#EDF3FA; --wdl-draw:#8A8178; --wdl-black:#3E3A36; --wdl-frame:#6D6459;
+  /* 실측: 480px 화면, density 2.0 -> 240dp. 1dp = 2px */
+  --dp:2px; --screen:480px; --board:339.4px; --sq:42.42px; --tab-w:34px; --tab-h:176.5px;
+
+  /* 페이지 크롬 — 라이트 */
+  --page-bg:#F2F0EC; --page-panel:#FFFFFF; --page-ink:#1B1A18;
+  --page-muted:#6E6862; --page-rule:#DFDAD2; --page-mark:#A8482A;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --page-bg:#0B0B0C; --page-panel:#141315; --page-ink:#EDEAE4;
+    --page-muted:#948C82; --page-rule:#26262A; --page-mark:#D6764F;
+  }
+}
+:root[data-theme="dark"]{
+  --page-bg:#0B0B0C; --page-panel:#141315; --page-ink:#EDEAE4;
+  --page-muted:#948C82; --page-rule:#26262A; --page-mark:#D6764F;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--page-bg); color:var(--page-ink);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  padding:40px 20px 80px;
+}
+.wrap{max-width:1200px;margin:0 auto}
+.val{font-family:ui-monospace,SFMono-Regular,"JetBrains Mono",Consolas,monospace;
+  font-size:.88em;color:var(--page-mark)}
+
+header{border-bottom:1px solid var(--page-rule);padding-bottom:22px;margin-bottom:8px}
+h1{font-size:27px;letter-spacing:-.015em;line-height:1.2;margin-bottom:8px}
+.lede{color:var(--page-muted);max-width:74ch}
+h2{font-size:13px;letter-spacing:.11em;text-transform:uppercase;color:var(--page-muted);
+  margin:52px 0 6px;padding-bottom:9px;border-bottom:1px solid var(--page-rule)}
+h2 span{color:var(--page-mark);margin-right:10px}
+.sect-lede{color:var(--page-muted);max-width:74ch;margin:14px 0 22px}
+
+.row{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}
+.cap{font-size:12.5px;color:var(--page-muted);margin-bottom:11px;max-width:var(--screen)}
+.cap b{color:var(--page-ink);font-weight:600;display:block;margin-bottom:2px}
+
+/* ---------- 원형 워치 면 (480x480 실측 1:1) ---------- */
+.face{position:relative;width:var(--screen);height:var(--screen);border-radius:50%;
+  background:var(--background);color:var(--text-primary);overflow:hidden;flex:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  box-shadow:0 0 0 1px var(--page-rule),0 18px 50px rgba(0,0,0,.45)}
+
+/* 상단: 오프닝 이름 (2줄 분리) — DESIGN.md 9절.
+   높이 84px + 보드 339.4px + 하단 56px = 479.4px < 480px. 세 블록의 합이
+   화면을 넘으면 flex가 넘쳐 하단 막대가 잘린다(첫 시안에서 실제로 잘렸음).
+   각 줄의 폭은 그 y좌표에서의 원 현(chord) 길이에서 역산했다 — 아래 주석 참고. */
+.head{padding-top:26px;height:84px;width:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:flex-start;gap:2px;text-align:center}
+.op-family{font-size:22px;font-weight:600;line-height:1.2;color:var(--text-primary);
+  max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.op-var{font-size:22px;line-height:1.2;color:var(--text-secondary);
+  max-width:58%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.head.empty .op-family{color:var(--text-secondary)}
+.head.fail .op-family{color:var(--error);max-width:58%}
+.head.pending{opacity:.4}
+
+.mid{display:flex;align-items:center;gap:8px}
+
+/* 하단: ECO 칩 + 승/무/패 막대 */
+/* 하단은 42px만 쓴다 — 원의 아래쪽은 현이 급격히 짧아져, 사각형 기준으로 "들어간다"고
+   계산해도 실제로는 화면 밖이다. y=461px에서 현 너비가 185px이라 칩(약 150px)이 겨우 들어간다.
+   그래서 승/무/패 막대는 칩 아래 따로 두지 않고 칩의 아랫변에 붙였다. */
+.foot{height:42px;display:flex;flex-direction:column;align-items:center;padding-top:4px}
+.foot.pending{opacity:.4}
+.chip{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:9px;
+  background:var(--surface);border-radius:16px;padding:3px 20px 9px;line-height:1;
+  font-size:22px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.chip .eco{font-weight:600;color:var(--text-primary)}
+.chip .sep{color:#5A544C}
+.chip .wdl{position:absolute;left:0;right:0;bottom:0;width:auto;border-radius:0;outline:none}
+.wdl{width:176px;height:6px;display:flex;border-radius:3px;overflow:hidden;
+  outline:2px solid var(--wdl-frame)}
+.wdl i{display:block;height:100%}
+.wdl .w{background:var(--wdl-white)} .wdl .d{background:var(--wdl-draw)} .wdl .b{background:var(--wdl-black)}
+
+/* ---------- 보드 ---------- */
+.board{width:var(--board);height:var(--board);display:grid;
+  grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr)}
+.sq{position:relative;display:flex;align-items:center;justify-content:center}
+.sq.lt{background:var(--board-light)} .sq.dk{background:var(--board-dark)}
+.sq.sel{background:var(--selected)}
+/* 방금 둔 수의 출발/도착 칸 — Color.kt의 LastMoveTint 그대로 */
+.sq.lm::before{content:'';position:absolute;inset:0;background:rgba(255,255,0,.375)}
+.pc{font-size:34px;line-height:1;position:relative;z-index:2}
+.pc.w{color:#fff;text-shadow:0 0 1px #111,0 1px 0 #111,1px 0 0 #111,-1px 0 0 #111,0 -1px 0 #111}
+.pc.b{color:#14161a;text-shadow:0 0 2px rgba(237,243,250,.45)}
+/* 후보 수 배지(사용자 요청: 인기 수는 원 안에 있는 숫자로) — 지름은 모두 같고
+   원 안의 숫자가 인기 순위(1=가장 많이 둔 수)를 나타낸다. 1dp 헤일로로 두 칸 색
+   모두에 대비를 확보한다. 21dp 칸에 들어가는 원에는 한 자리 숫자만 읽히므로
+   순위를 쓴다 — 정확한 비율은 목록에서 본다. */
+.badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;
+  width:66%;height:66%;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 2px var(--halo);
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;font-weight:600;color:var(--text-primary);line-height:1}
+/* 후보 수가 기물을 잡는 경우: 배지가 그 기물을 가리므로, 칸에 내접하는 accent
+   고리로 "이 수는 따먹는 수"임을 따로 표시한다(퍼즐 화면의 따먹기 고리와 같은 문법) */
+.mkc::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:90%;height:90%;border-radius:50%;border:4px solid var(--accent);z-index:1}
+/* 기물 선택 중 표시되는 합법수 점 (기존 퍼즐 화면과 동일) */
+.dot::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:30%;height:30%;border-radius:50%;background:var(--legal-dot);z-index:1}
+
+/* ---------- 사이드 탭 ---------- */
+.tab{width:var(--tab-w);height:var(--tab-h);background:var(--surface);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;font-size:19px;flex:none}
+.tab.right{border-radius:3px 31px 31px 3px / 3px 88px 88px 3px}
+.tab.left{border-radius:31px 3px 3px 31px / 88px 3px 3px 88px}
+.tab.off{opacity:.22}
+.tab.retry{background:#2E1B14;color:var(--error)}
+
+/* ---------- 모드 선택 화면 ---------- */
+.modes{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:24px}
+.btn{width:70%;height:104px;border-radius:52px;display:flex;align-items:center;
+  justify-content:center;font-size:28px;font-weight:500}
+.btn.primary{background:var(--accent);color:#FFFFFF}
+.btn.secondary{background:var(--surface);color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
+
+/* ---------- 후보 수 목록 오버레이 ---------- */
+/* 목록도 원 안에 들어와야 한다. 첫 행의 위쪽 모서리가 가장 빡빡한 지점이라,
+   행을 y=76px에서 시작시키고(그 높이의 현 = 348px) 폭을 68%(326px)로 잡았다. */
+.sheet{position:absolute;inset:0;background:rgba(0,0,0,.92);z-index:5;
+  display:flex;flex-direction:column;align-items:center;padding:34px 0 0}
+.sheet-title{font-size:22px;letter-spacing:.1em;color:var(--text-secondary);margin-bottom:16px}
+.sheet-list{width:68%;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.mv{background:var(--surface);border-radius:16px;padding:12px 20px}
+.mv-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.mv-san{font-size:28px;font-weight:600;color:var(--text-primary)}
+.mv-pct{font-size:22px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.mv .wdl{width:100%;margin-top:8px}
+.mv-open{font-size:20px;color:var(--text-secondary);margin-top:6px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet-empty{margin-top:120px;font-size:22px;color:var(--text-secondary);text-align:center;
+  width:70%;line-height:1.4}
+.fade{position:absolute;left:0;right:0;bottom:0;height:70px;z-index:6;
+  background:linear-gradient(to top,#000 10%,rgba(0,0,0,0))}
+
+/* ---------- 주석 ---------- */
+ol.notes{list-style:none;margin:26px 0 0;max-width:88ch}
+ol.notes li{position:relative;padding:12px 0 12px 80px;border-top:1px solid var(--page-rule)}
+ol.notes li:last-child{border-bottom:1px solid var(--page-rule)}
+ol.notes li::before{content:attr(data-k);position:absolute;left:0;top:12px;width:66px;
+  font:600 11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;
+  letter-spacing:.06em;color:var(--page-mark);text-transform:uppercase}
+
+/* ---------- 표 ---------- */
+.tbl-wrap{overflow-x:auto;margin-top:22px;border:1px solid var(--page-rule);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:640px;background:var(--page-panel)}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--page-rule);font-size:14px;
+  vertical-align:top}
+th{font:600 11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--page-muted);background:var(--page-bg)}
+tr:last-child td{border-bottom:0}
+td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;
+  color:var(--page-mark)}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Opening Explorer 화면 시안</h1>
+  <p class="lede">
+    PLAN.md 9절(오프닝 학습 기능)의 화면 3종 — 모드 선택 · 오프닝 탐색 · 후보 수 목록 — 과
+    로딩·빈 상태·오류·긴 이름까지의 디자인 시안. 워치 면은 Galaxy Watch 8 실측
+    <span class="val">480×480</span>(density 2.0, 1dp = 2px) 1:1 크기다.
+    색·간격 토큰은 DESIGN.md 2~4절 값을 그대로 쓰고, 이 문서에서 새로 정하는 값은
+    승/무/패 막대와 후보 수 배지 두 가지뿐이다.
+  </p>
+</header>
+
+<h2><span>01</span>모드 선택 화면</h2>
+<p class="sect-lede">
+  로그인 직후 진입한다. 목적이 하나(어느 모드로 갈지)뿐이라 화면에는 버튼 2개만 둔다.
+  기존 로그인 화면의 버튼 양식(높이 <span class="val">52dp</span>, 반경 <span class="val">26dp</span>,
+  폭 안전영역의 70%)을 그대로 재사용해 새로 익힐 것이 없게 했다.
+  퍼즐이 기존 주 흐름이므로 위·accent 채움, 오프닝은 아래·외곽선으로 위계를 준다.
+</p>
+<div class="row">
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>모드 선택</b>탭 1회로 두 모드 어디든 닿는다.</figcaption>
+    <div class="face">
+      <div class="modes">
+        <div class="btn primary">Puzzles</div>
+        <div class="btn secondary">Openings</div>
+      </div>
+    </div>
+  </figure>
+</div>
+
+<h2><span>02</span>오프닝 탐색 화면</h2>
+<p class="sect-lede">
+  퍼즐 화면의 골격을 그대로 쓴다 — 보드 <span class="val">70.7%</span> 중앙, 상단 텍스트,
+  하단 칩, 좌·우 반달 탭. 힌트 탭 자리가 <b>되돌리기</b>, 키보드 탭 자리가
+  <b>후보 수 목록</b>이 된다. 아래 두 면은 스페인 오프닝
+  (<span class="val">1.e4 e5 2.Nf3 Nc6 3.Bb5</span>) 이후 흑 차례다.
+</p>
+<div class="row">
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>기본 상태</b>인기 상위 5수의 도착 칸에 배지. 원 안의 숫자가 인기 순위다.</figcaption>
+    <div class="face">
+      <div class="head">
+        <div class="op-family">Ruy Lopez</div>
+      </div>
+      <div class="mid">
+        <div class="tab left">↩</div>
+        <div class="board" data-fen="r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R"
+             data-markers="a6:1,f6:2,c5:3,d6:4,e7:5"></div>
+        <div class="tab right">≡</div>
+      </div>
+      <div class="foot">
+        <div class="chip"><span class="eco">C60</span><span class="sep">·</span><span>4.8M</span>
+          <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>기물 선택 중</b>배지를 감추고 합법수 점만 남긴다 — 두 원 체계가 겹치지 않게.</figcaption>
+    <div class="face">
+      <div class="head">
+        <div class="op-family">Ruy Lopez</div>
+      </div>
+      <div class="mid">
+        <div class="tab left">↩</div>
+        <div class="board" data-fen="r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R"
+             data-selected="c6" data-dots="a5,b4,d4,e7,b8"></div>
+        <div class="tab right">≡</div>
+      </div>
+      <div class="foot">
+        <div class="chip"><span class="eco">C60</span><span class="sep">·</span><span>4.8M</span>
+          <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
+        </div>
+      </div>
+    </div>
+  </figure>
+</div>
+
+<ol class="notes">
+  <li data-k="상단">
+    오프닝 이름은 <code>Family: Variation, Sub</code> 구조다. 첫 <code>: </code>에서 잘라
+    1줄에 계열(<span class="val">11sp SemiBold</span>, textPrimary),
+    2줄에 변화형(<span class="val">11sp</span>, textSecondary)을 놓고 각 줄을 따로 말줄임한다.
+  </li>
+  <li data-k="원 기하">
+    두 줄의 폭은 취향이 아니라 원의 현(chord) 길이에서 역산한 값이다.
+    반지름 240px 화면에서 y=26px 높이의 현은 <span class="val">217px</span>,
+    y=54px에서는 <span class="val">303px</span>다. 그래서 1줄 <span class="val">42%</span>(200px),
+    2줄 <span class="val">58%</span>(280px)로 제한했다 — 퍼즐 화면이 쓰는 78%를 그대로 가져오면
+    첫 줄이 화면 밖으로 잘린다.
+    세로도 마찬가지다. 상단 <span class="val">84</span> + 보드 <span class="val">339.4</span> +
+    하단 <span class="val">42</span> = <span class="val">465.4px</span>.
+    첫 시안은 이 합이 493px이라 넘쳤고, 480px 안으로 줄인 두 번째 시안도
+    <b>사각형 기준으로만</b> 맞아서 막대가 여전히 안 보였다 — 원 바닥 근처는 현이 0에 가까워
+    "480px 안"이 곧 "화면 안"이 아니다. 두 번 다 목업을 실제로 띄워 보고 발견했다.
+  </li>
+  <li data-k="마커">
+    <span class="val">accent #C15F3C</span> 원 안에 <b>인기 순위 숫자</b>(1=가장 많이 둔 수).
+    지름은 칸의 <span class="val">66%</span>로 다섯 개 모두 같고, 크기가 아니라 숫자가 순위를 말한다.
+    비율(%) 대신 순위를 쓰는 이유는 자릿수다 — 칸 한 변이 약 <span class="val">21dp</span>라
+    원 안에 읽히는 크기(<span class="val">10sp</span>)로 들어가는 건 한 자리뿐이고,
+    정확한 비율은 목록에서 바로 볼 수 있다.
+    accent는 밝은 칸에 3.77:1이지만 어두운 칸엔 1.46:1로 미달이라,
+    <span class="val">1dp #1A1A1A</span> 헤일로를 둘러 두 칸 색 모두에서 형태가 읽히게 했다.
+    도착 칸에 기물이 있으면(따먹는 수) 배지가 그 기물을 가리므로, 칸에 내접하는 accent 고리를
+    하나 더 둘러 "따먹는 수"임을 표시한다 — 퍼즐 화면의 따먹기 고리와 같은 문법이다.
+    <br><b>구현 중 확인</b>: 후보 두 수가 같은 칸에 도착하면(예: <span class="val">Nc3</span>와
+    <span class="val">c3</span>) 더 인기 있는 쪽이 그 칸의 배지를 갖고 다른 쪽은 목록에만 남는다 —
+    그래서 보드의 숫자가 <span class="val">1·2·4·5</span>처럼 건너뛸 수 있다.
+    숫자는 언제나 목록의 순위 그대로여야 하므로 다시 매기지 않는다.
+  </li>
+  <li data-k="좌 탭">
+    되돌리기. 되돌릴 수가 없으면 <span class="val">opacity .22</span>로 비활성 표시하고 탭을 받지 않는다.
+    되돌리기는 캐시 히트라 네트워크 요청이 0회다(PLAN.md 9.3).
+  </li>
+  <li data-k="하단">
+    <span class="val">ECO 코드 · 이 국면의 총 대국 수</span> 칩. 승/무/패 막대는 칩 아래 따로 두지 않고
+    <b>칩의 아랫변</b>에 폭 전체로 붙인다 — 원의 아래쪽은 현이 급격히 짧아져
+    (y=<span class="val">470px</span>에서 현 너비 <span class="val">141px</span>)
+    칩과 막대를 세로로 쌓으면 막대가 화면 밖으로 나간다.
+    막대는 좌→우로 항상 백승·무·흑승 순(Lichess 탐색기 관례)이고, 폭이 곧 칩 폭이라 따로 외곽선이 필요 없다.
+    목록 오버레이에서는 세로 여유가 있어 행 폭 전체의 독립 막대로 둔다.
+  </li>
+</ol>
+
+<h2><span>03</span>후보 수 목록 오버레이</h2>
+<p class="sect-lede">
+  우측 탭으로 연다. 보드 위를 <span class="val">rgba(0,0,0,.92)</span>로 덮고
+  <span class="val">ScalingLazyColumn</span>으로 12수 전부를 보여준다.
+  Galaxy Watch 8(비-Classic)에는 회전 베젤이 없으므로 터치 스크롤이 기본이고,
+  회전형 사이드 버튼 스크롤은 <span class="val">Modifier.rotaryScrollable</span>로 부가 지원만 한다.
+</p>
+<div class="row">
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>후보 수 목록</b>이름이 갈리는 수에만 그 오프닝 이름이 보조 줄로 붙는다.</figcaption>
+    <div class="face">
+      <div class="sheet">
+        <div class="sheet-title">NEXT MOVES</div>
+        <div class="sheet-list">
+          <div class="mv">
+            <div class="mv-top"><span class="mv-san">a6</span><span class="mv-pct">41%</span></div>
+            <div class="wdl"><i class="w" style="width:50%"></i><i class="d" style="width:5%"></i><i class="b" style="width:45%"></i></div>
+            <div class="mv-open">Ruy Lopez: Morphy Defense</div>
+          </div>
+          <div class="mv">
+            <div class="mv-top"><span class="mv-san">Nf6</span><span class="mv-pct">19%</span></div>
+            <div class="wdl"><i class="w" style="width:48%"></i><i class="d" style="width:6%"></i><i class="b" style="width:46%"></i></div>
+            <div class="mv-open">Ruy Lopez: Berlin Defense</div>
+          </div>
+          <div class="mv">
+            <div class="mv-top"><span class="mv-san">Bc5</span><span class="mv-pct">9%</span></div>
+            <div class="wdl"><i class="w" style="width:51%"></i><i class="d" style="width:4%"></i><i class="b" style="width:45%"></i></div>
+            <div class="mv-open">Ruy Lopez: Classical Variation</div>
+          </div>
+          <div class="mv">
+            <div class="mv-top"><span class="mv-san">d6</span><span class="mv-pct">7%</span></div>
+            <div class="wdl"><i class="w" style="width:53%"></i><i class="d" style="width:4%"></i><i class="b" style="width:43%"></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="fade"></div>
+    </div>
+  </figure>
+
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>빈 상태</b>수집된 대국이 없는 국면. 오류가 아니라는 걸 문장으로 밝힌다.</figcaption>
+    <div class="face">
+      <div class="sheet">
+        <div class="sheet-title">NEXT MOVES</div>
+        <div class="sheet-empty">이 국면에서 두어진<br>대국 기록이 없습니다</div>
+      </div>
+    </div>
+  </figure>
+</div>
+
+<ol class="notes">
+  <li data-k="한 행">
+    <span class="val">SAN</span>(14sp SemiBold)과 인기 <span class="val">%</span>(11sp)를 한 줄에 양끝 정렬하고,
+    그 아래 행 폭 전체의 승/무/패 막대를 둔다.
+    <code>moves[].opening</code>이 있는 수(= 이 수로 오프닝 이름이 갈리는 분기점)에만
+    셋째 줄로 그 이름을 붙인다 — 대부분의 수는 두 줄로 끝난다.
+  </li>
+  <li data-k="터치">
+    행 배경 <span class="val">surface</span>, 반경 <span class="val">8dp</span>, 세로 패딩 <span class="val">6dp</span>,
+    행 간격 <span class="val">4dp</span>, 폭 화면의 <span class="val">68%</span>. 두 줄 행이 약 <span class="val">36dp</span>라
+    간격을 더해 유효 터치 타깃 <span class="val">48dp</span>를 넘긴다. 행을 탭하면 그 수를 두고 오버레이가 닫힌다.
+    폭 68%와 첫 행 시작 위치(<span class="val">y=76px</span>)도 상단 이름과 같은 방식으로 원의 현에서 역산한 값이다 —
+    첫 행의 위쪽 두 모서리가 이 화면에서 가장 빡빡한 지점이다.
+  </li>
+  <li data-k="닫기">
+    가장자리 스와이프. 오버레이가 열려 있으면 안쪽 <code>SwipeToDismissBox</code>가 먼저 받아
+    오버레이만 닫히고, 닫힌 뒤의 스와이프가 모드 선택 화면으로 돌아간다.
+  </li>
+</ol>
+
+<h2><span>04</span>로딩 · 빈 상태 · 오류 · 긴 이름</h2>
+<p class="sect-lede">
+  블루투스 프록시 왕복이 수백 ms라, 착수는 즉시 반영하고 통계만 나중에 채운다.
+  기다리는 동안 화면이 비지 않게 <b>직전 값을 남긴 채 흐리게</b> 두는 것이 이 화면의 로딩 표현이다.
+</p>
+<div class="row">
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>착수 직후 대기</b>보드는 이미 갱신됐고, 이름·칩만 <span class="val">opacity .4</span>로 흐려 응답을 기다린다.</figcaption>
+    <div class="face">
+      <div class="head pending">
+        <div class="op-family">Ruy Lopez</div>
+      </div>
+      <div class="mid">
+        <div class="tab left">↩</div>
+        <div class="board" data-fen="r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R"
+             data-last="a7,a6"></div>
+        <div class="tab right">≡</div>
+      </div>
+      <div class="foot pending">
+        <div class="chip"><span class="eco">C60</span><span class="sep">·</span><span>4.8M</span>
+          <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>정석 밖(Out of book)</b>이름도 통계도 없는 국면. 되돌리기만 살아 있다.</figcaption>
+    <div class="face">
+      <div class="head empty">
+        <div class="op-family">Out of book</div>
+      </div>
+      <div class="mid">
+        <div class="tab left">↩</div>
+        <div class="board" data-fen="rnbqkbnr/pppppp2/8/6pp/PP6/8/2PPPPPP/RNBQKBNR"></div>
+        <div class="tab right off">≡</div>
+      </div>
+      <div class="foot">
+        <div class="chip"><span>No games</span></div>
+      </div>
+    </div>
+  </figure>
+</div>
+
+<div class="row" style="margin-top:36px">
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>연결 실패 · 429</b>보드 조작은 계속 되고, 우측 탭이 재시도로 바뀐다.</figcaption>
+    <div class="face">
+      <div class="head fail">
+        <div class="op-family">Connection lost</div>
+      </div>
+      <div class="mid">
+        <div class="tab left">↩</div>
+        <div class="board" data-fen="r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R"></div>
+        <div class="tab right retry">↻</div>
+      </div>
+      <div class="foot"></div>
+    </div>
+  </figure>
+
+  <figure class="face-wrap">
+    <figcaption class="cap"><b>긴 이름</b>계열/변화형을 나눠 두 줄에 담고, 넘치는 쪽만 말줄임한다.</figcaption>
+    <div class="face">
+      <div class="head">
+        <div class="op-family">Sicilian Defense</div>
+        <div class="op-var">Najdorf Variation, English Attack</div>
+      </div>
+      <div class="mid">
+        <div class="tab left">↩</div>
+        <div class="board" data-fen="rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N1B3/PPP2PPP/R2QKB1R"
+             data-markers="e5:1,g4:2,e6:3,b5:4,c6:5"></div>
+        <div class="tab right">≡</div>
+      </div>
+      <div class="foot">
+        <div class="chip"><span class="eco">B90</span><span class="sep">·</span><span>1.2M</span>
+          <div class="wdl"><i class="w" style="width:52%"></i><i class="d" style="width:4%"></i><i class="b" style="width:44%"></i></div>
+        </div>
+      </div>
+    </div>
+  </figure>
+</div>
+
+<ol class="notes">
+  <li data-k="로딩">
+    첫 진입(직전 값이 없을 때)은 이름 자리에 <span class="val">···</span>, 칩은 빈 칩으로 자리만 지킨다.
+    스피너를 따로 두지 않는 이유는, 착수는 이미 끝났고 기다리는 대상이 화면의 일부(이름·통계)뿐이기 때문이다.
+  </li>
+  <li data-k="오류">
+    <span class="val">error #D14343</span>로 <code>Connection lost</code>를 상단에 띄우고
+    우측 탭을 재시도(<span class="val">↻</span>)로 바꾼다 —
+    퍼즐 화면이 실패를 다루는 규칙(상단 문구 + 재시도 탭)과 같은 자리, 같은 방식이다.
+    보드는 계속 조작할 수 있어, 끊긴 동안에도 수를 되짚어 볼 수 있다.
+  </li>
+  <li data-k="빈 상태">
+    <code>opening</code>이 <code>null</code>이고 대국 수가 0이면 정석 밖이다.
+    <code>No games</code>는 실패가 아니라 사실 진술이므로 error 색을 쓰지 않고,
+    후보가 없으니 우측 목록 탭도 비활성으로 내린다.
+  </li>
+</ol>
+
+<h2><span>05</span>이 문서에서 새로 정한 값</h2>
+<p class="sect-lede">
+  나머지는 전부 DESIGN.md 2~4절 기존 토큰이다. 아래 두 묶음만 신규이며,
+  <code>ui/theme/Color.kt</code>·<code>Dimens.kt</code>로 그대로 옮겨 적는다.
+</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>토큰</th><th>값</th><th>용도 / 근거</th></tr></thead>
+  <tbody>
+    <tr><td><code>markerHalo</code></td><td><code>#1A1A1A</code>, 1dp</td>
+      <td>후보 수 마커 외곽 고리. accent가 어두운 칸에 1.46:1로 미달이라 형태 판독용으로 추가.</td></tr>
+    <tr><td><code>CandidateMarkerRatio</code></td><td><code>0.66</code></td>
+      <td>후보 배지 지름(칸 한 변 대비). 순위별로 다르지 않다 — 순위는 원 안의 숫자가 말한다.</td></tr>
+    <tr><td><code>CandidateMarkerLimit</code></td><td><code>5</code></td>
+      <td>보드에 배지를 그릴 후보 수. 6위 이하는 목록에서만 본다.</td></tr>
+    <tr><td><code>markerDigit</code></td><td><code>10sp / SemiBold</code></td>
+      <td>배지 안의 순위 숫자. 배지 지름이 약 14dp라 한 자리가 읽히는 최대 크기.</td></tr>
+    <tr><td><code>wdlWhite</code></td><td><code>#EDF3FA</code></td><td>승/무/패 막대의 백승 구간. 밝은 칸 색과 같은 값을 재사용.</td></tr>
+    <tr><td><code>wdlDraw</code></td><td><code>#8A8178</code></td><td>무승부 구간. 백승 구간과 3.2:1.</td></tr>
+    <tr><td><code>wdlBlack</code></td><td><code>#3E3A36</code></td><td>흑승 구간. 무승부 구간과 3.13:1 — 순검정은 배경에 묻혀 못 쓴다.</td></tr>
+    <tr><td><code>wdlFrame</code></td><td><code>#6D6459</code>, 1dp</td>
+      <td>막대 외곽선. 흑승 구간이 검은 배경과 1.87:1이라, 막대가 어디서 끝나는지는 이 선이 책임진다(배경과 3.6:1).</td></tr>
+    <tr><td><code>WdlBarHeight</code></td><td><code>3dp</code></td>
+      <td>승/무/패 막대 두께. 폭은 하단에서는 칩 폭, 목록에서는 행 폭을 따른다.</td></tr>
+    <tr><td><code>OpeningNameWidth</code></td><td><code>0.42</code> / <code>0.58</code></td>
+      <td>상단 이름 1줄 / 2줄의 폭(화면 대비). 각 줄 y좌표에서의 원 현 길이에서 역산 — 퍼즐 화면의 0.78은 여기서 잘린다.</td></tr>
+    <tr><td><code>HeadHeight / FootHeight</code></td><td><code>42dp / 21dp</code></td>
+      <td>상·하단 블록 높이. 보드(169.7dp)와 합쳐 240dp를 넘지 않아야 하고, 원의 현 안에도 들어와야 한다.</td></tr>
+  </tbody>
+</table>
+</div>
+</div>
+
+<script>
+// 보드는 손으로 64칸을 적지 않고 FEN 배치에서 그린다 — 칸 색·좌표 실수를 원천 차단.
+// 양쪽 모두 '검은' (속이 찬) 글리프를 쓰고 색으로만 구분한다.
+// 흰 글리프(♙ 등)는 폰트에 따라 속이 빈 윤곽선으로 그려져, 같은 CSS 색을 줘도
+// 흑백이 뒤바뀐 것처럼 보이는 문제가 실제 렌더링에서 확인됐다.
+const GLYPH = { k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟' };
+const FILES = 'abcdefgh';
+
+function parseList(v) {
+  return (v || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+document.querySelectorAll('.board').forEach(board => {
+  const rows = board.dataset.fen.split('/');
+  const markers = {};
+  parseList(board.dataset.markers).forEach(entry => {
+    const [sq, rank] = entry.split(':');
+    markers[sq] = rank;
+  });
+  const dots = new Set(parseList(board.dataset.dots));
+  const last = new Set(parseList(board.dataset.last));
+  const selected = board.dataset.selected;
+
+  rows.forEach((row, rowIndex) => {
+    const rank = 8 - rowIndex;               // 위에서부터 8랭크
+    let file = 0;
+    for (const ch of row) {
+      if (ch >= '1' && ch <= '8') { file += Number(ch); continue; }
+      // 남은 빈 칸을 먼저 흘려보내기 위해 칸 생성을 아래에서 일괄 처리하므로,
+      // 여기서는 배치만 기록한다.
+      board.dataset['p' + FILES[file] + rank] = ch;
+      file += 1;
+    }
+  });
+
+  for (let rowIndex = 0; rowIndex < 8; rowIndex++) {
+    const rank = 8 - rowIndex;
+    for (let file = 0; file < 8; file++) {
+      const name = FILES[file] + rank;
+      const sq = document.createElement('div');
+      // a1은 항상 어두운 칸: (file + rank)가 짝수일 때 밝은 칸.
+      sq.className = 'sq ' + ((file + rank) % 2 === 0 ? 'lt' : 'dk');
+      if (selected === name) sq.classList.add('sel');
+      if (last.has(name)) sq.classList.add('lm');
+
+      const piece = board.dataset['p' + name];
+      if (piece) {
+        const el = document.createElement('span');
+        el.className = 'pc ' + (piece === piece.toUpperCase() ? 'w' : 'b');
+        el.textContent = GLYPH[piece.toLowerCase()];
+        sq.appendChild(el);
+      }
+      // 배지는 항상 같은 크기의 원 + 순위 숫자. 도착 칸에 기물이 있으면(따먹는 수)
+      // 배지가 그 기물을 가리므로 칸에 고리를 하나 더 두른다.
+      if (markers[name]) {
+        if (piece) sq.classList.add('mkc');
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = markers[name];
+        sq.appendChild(badge);
+      }
+      if (dots.has(name)) sq.classList.add('dot');
+      board.appendChild(sq);
+    }
+  }
+});
+</script>

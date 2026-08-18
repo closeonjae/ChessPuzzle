@@ -260,3 +260,71 @@ RemoteAuthClient.create(context).sendAuthorizationRequest(
 2. `RemoteAuthClient`의 정확한 에러 코드 체계, PKCE code_verifier/challenge 생성이 라이브러리 내장인지 수동 구현인지, 필요한 manifest 권한 — **공식 문서에 미기재**, 프로토타입 단계에서 실기기로 검증 필요(리스크로 PLAN.md에 명시).
 3. Bluetooth 프록시 인터넷 연결 불안정 시 재시도/오프라인 UX 정책.
 4. 패키지명(`redirect_uri`의 `wear.googleapis.com/3p_auth/{패키지명}` 형태에 들어갈 값) 및 Lichess OAuth `client_id` 문자열 결정.
+
+## 11. 오프닝 학습 기능 — Lichess Opening Explorer API 조사
+
+사용자 요청: "어떤 수를 두면 어떤 오프닝인지 알 수 있게, 다음 수는 뭐가 있는지". 즉 (a) 현재 국면의 오프닝 이름, (b) 이 국면에서 실제로 많이 두어지는 다음 수 목록 — 두 가지 데이터가 필요하다. 둘 다 **Lichess Opening Explorer API 한 번의 응답으로 동시에** 얻을 수 있다.
+
+### 11-A. 엔드포인트
+
+> **호스트가 다르다.** 퍼즐 API와 달리 `lichess.org`가 아니라 **`explorer.lichess.org`** 다. (공식 스펙 `doc/specs/lichess-api.yaml`의 Opening Explorer 태그 설명에 명시. 예전 문서·서드파티 글에 자주 나오는 `explorer.lichess.ovh`는 구 호스트명.)
+
+| 엔드포인트 | 내용 | 비고 |
+|---|---|---|
+| `GET /masters` | 마스터 대국 DB(2,500+ 대국자) 집계 | 정석 위주, 잡수가 적음. `topGames` 최대 15 |
+| `GET /lichess` | Lichess 전체 레이팅 대국 집계 | `speeds`/`ratings`로 **내 레이팅대 필터 가능**. `topGames`/`recentGames` 최대 4 |
+| `GET /player` | 특정 플레이어 본인 대국 | 온디맨드 인덱싱이라 첫 요청이 느림(ND-JSON 스트리밍) |
+
+**공통 파라미터**
+- `fen` — 기준 국면(X-FEN/EPD). 생략 시 표준 시작 위치.
+- `play` — `fen`에서 이어서 둘 **UCI 수순의 쉼표 구분 문자열**(예: `d2d4,d7d5,c2c4,c7c6,c4d5`).
+  > **중요**: 스펙에 "Required to find an opening name, if `fen` is not an exact match for a named position"이라고 적혀 있고, 실제 서버 구현(`lila-openingexplorer/src/opening.rs`의 `classify_and_play`)을 확인한 결과 **`play` 수순을 한 수씩 진행하며 매 국면을 이름 사전과 대조하고, 이름이 붙은 가장 최근 국면을 계속 물고 간다**(`opening = self.classify_exact(root).or(opening)`). 즉 **FEN만 던지면 그 국면이 사전에 정확히 등재된 경우에만 이름이 나오고, 아니면 `null`이다.** 오프닝 이름을 안정적으로 얻으려면 **시작 위치부터의 전체 UCI 수순을 매번 `play`로 보내야 한다** — 이 앱에서는 FEN을 쓰지 말고 `play` 누적 방식으로 가야 한다는 뜻.
+- `moves` — 반환할 후보 수 개수(기본 12).
+- `since` / `until` — 기간 필터(`/lichess`는 `YYYY-MM`, `/masters`는 연도 정수).
+- `/lichess` 전용: `variant`(기본 `standard`), `speeds`(`bullet,blitz,rapid,classical,...`), `ratings`(그룹 하한값 열거: `0,1000,1200,1400,1600,1800,2000,2200,2500` — 각 값은 다음 값 직전까지, `2500`은 그 이상 전부), `history`(월별 추이).
+
+### 11-B. 응답 스키마 (공식 스펙 `schemas/OpeningExplorerLichess.yaml` + 예시 JSON)
+
+```jsonc
+{
+  "white": 5061745, "draws": 492487, "black": 4458129,   // 이 국면의 전체 승/무/패 집계
+  "moves": [                                              // 인기순 정렬
+    { "uci": "c6d5", "san": "cxd5", "averageRating": 1806,
+      "white": 4517660, "draws": 450366, "black": 4016728,
+      "game": null,
+      "opening": null },                                  // ← 아래 설명
+    { "uci": "g8f6", "san": "Nf6", "averageRating": 1973,
+      "white": 195502, "draws": 17425, "black": 184987, "game": null,
+      "opening": { "eco": "D06", "name": "Queen's Gambit Declined: Marshall Defense, Tan Gambit" } }
+  ],
+  "topGames": [ { "uci": "...", "id": "EqJcFS1j", "winner": "white", "speed": "ultraBullet",
+                  "mode": "rated", "white": {"name":"...","rating":2969},
+                  "black": {"name":"...","rating":2708}, "year": 2018, "month": "2018-04" } ],
+  "recentGames": [ /* 동일 형태 */ ],
+  "opening": { "eco": "D10", "name": "Slav Defense: Exchange Variation" }   // 현재 국면의 이름(없으면 null)
+}
+```
+
+- **최상단 `opening`** = 지금 국면의 오프닝 이름(11-A의 "가장 최근에 이름 붙은 국면" 규칙 적용). → 요청 (a) 충족.
+- **`moves[].opening`** = 서버 구현상 `classify_exact(pos_after)`로, **그 수를 두면 도달하는 국면이 사전에 정확히 등재돼 있을 때만** 채워진다. 즉 **"이 수를 두면 ○○ 오프닝이 된다"를 그대로 표시할 수 있는 필드**다(대부분의 수는 `null` — 이름이 새로 갈리는 분기점에서만 값이 있음). → 요청 (b)의 "어떤 수를 두면 어떤 오프닝인지" 부분을 별도 계산 없이 충족.
+- `moves[]`의 `white/draws/black`은 대국 **수**이므로, 표시용 인기도(%)와 승률 막대는 클라이언트에서 합으로 나눠 계산한다.
+
+### 11-C. 인증 / 레이트 리밋
+
+- 스펙상 `security: OAuth2: []`로 표시돼 있으나 브라우저 분석판에서 비로그인으로도 동작하는 공개 엔드포인트다. 이 앱은 이미 access token을 갖고 있으므로 `Authorization: Bearer`를 붙여 보내는 편이 안전하다(레이트 리밋 상 유리, 손해 없음).
+- 공식 정책(7절과 동일): **동시 요청 금지(한 번에 하나)**, 429 수신 시 최소 1분 대기. → 수를 빠르게 연속으로 두면 요청이 겹칠 수 있으므로 **직전 요청 취소 + 국면별 인메모리 캐시**가 사실상 필수.
+- CORS 헤더(`Access-Control-Allow-Origin: *`)가 명시된 것으로 보아 클라이언트 직접 호출을 상정한 API다.
+
+### 11-D. 오프라인 대안 — `lichess-org/chess-openings` 데이터셋
+
+- 리포지토리: <https://github.com/lichess-org/chess-openings>. `a.tsv`~`e.tsv`(ECO 볼륨별), 컬럼 `eco / name / pgn`. 총 **3,806개** 항목, 합계 **약 388KB**(a 66KB, b 77KB, c 132KB, d 69KB, e 43KB).
+- `dist/`(추가로 `uci`, `epd` 컬럼 포함)는 **리포지토리에 커밋돼 있지 않고 빌드 시 생성**된다(`pip install chess` + `make`, 또는 GitHub Actions 아티팩트). 따라서 앱에 넣으려면 `pgn` 컬럼을 chesslib로 재생해 우리가 직접 국면 키를 만들어야 한다.
+- 라이선스: **CC0(퍼블릭 도메인)** — 앱 번들에 포함해도 무방.
+- 이름 매칭 규칙(리포지토리 README): "이름이 붙은 국면을 찾을 때까지 수를 거꾸로 되짚어 간다" — Explorer 서버가 하는 것과 동일한 규칙이므로, 오프라인 구현 시에도 같은 방식(수순을 진행하며 마지막으로 매칭된 이름 유지)을 쓰면 된다.
+- **한계**: 이 데이터셋으로는 오프닝 **이름**만 얻는다. "다음 수 후보와 그 인기도/승률"은 대국 집계 데이터라 Explorer API 없이는 불가능하다. 따라서 오프라인 번들은 Explorer의 대체재가 아니라, 네트워크 실패 시 이름만이라도 보여주는 **폴백** 용도로만 의미가 있다.
+
+### 11-E. 클라이언트 측에서 이미 갖춘 것
+
+- `PuzzleEngine`이 쓰는 chesslib(8절)로 합법수 생성(`board.legalMoves()`), SAN 파싱(`doMove(String)`), UCI 문자열화(`Move.toString()`)가 전부 가능 — 오프닝 모드에 필요한 체스 로직은 **새 의존성 없이** 해결된다. 되돌리기는 `board.undoMove()`.
+- `LichessApiClient`(OkHttp + kotlinx.serialization)와 동일한 패턴으로 Explorer 클라이언트를 추가하면 되고, 호스트만 다르다.
+- `PuzzleScreen`의 `Board`/`BoardSquare` 컴포저블은 퍼즐 상태(`PuzzleUiState`)에 직접 묶여 있어, 오프닝 화면에서 재사용하려면 파라미터화(기물 배치 + 하이라이트 + 탭 콜백만 받도록)가 필요하다 — PLAN.md에서 트레이드오프로 다룬다.
