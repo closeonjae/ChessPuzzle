@@ -42,8 +42,8 @@ object OpeningDimens {
     const val CandidateMarkerRatio = 0.66f
     /** How many candidate moves get a badge on the board. The rest are list-only — a ~21dp square can't carry more than a handful legibly. */
     const val CandidateMarkerLimit = 5
-    /** Rim around a candidate badge. */
-    val MarkerHaloWidth = 1.dp
+    /** The candidate badge's ring. The badge is ring-and-digit only, so this is the whole of it. */
+    val MarkerBorderWidth = 1.dp
     /** Win/draw/loss bar thickness. Its width follows whatever it is attached to. */
     val WdlBarHeight = 3.dp
     /** Candidate-list row width — fraction of screen width. */

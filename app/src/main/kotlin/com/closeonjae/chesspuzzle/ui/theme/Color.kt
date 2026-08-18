@@ -47,8 +47,14 @@ val HintTint = Color(0x60FF0000) // rgba(255,0,0,0.375)
 
 // Opening explorer (DESIGN.md 9.2절). Contrast ratios in the comments were
 // computed against this file's own values, not eyeballed.
-/** 1dp rim around the candidate-move badge. Accent alone is 3.77:1 on light squares but only 1.46:1 on dark ones; this reads 15.3:1 / 5.9:1 against them, so the badge keeps its shape on both. */
-val MarkerHalo = Color(0xFF1A1A1A)
+/**
+ * The candidate-move badge — its ring and its rank digit, with nothing behind
+ * them (user request: 배경 없애고 검은색 테두리랑 숫자만, 투명도 50%). Black at
+ * 50% is the same overlay language [LegalDot] already uses on this board, and
+ * it composites to 3.9:1 against a light square and 3.0:1 against a dark one,
+ * so the ring still clears the 3:1 floor for a graphical indicator on both.
+ */
+val CandidateMarker = Color(0x80000000) // rgba(0,0,0,0.5)
 /** White-wins share of a win/draw/loss bar — the same value as [BoardLight], reused rather than a second near-white. */
 val WdlWhite = Color(0xFFEDF3FA)
 /** Draw share. 3.2:1 against [WdlWhite]. */

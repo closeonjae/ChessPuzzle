@@ -13,7 +13,7 @@
   --accent:#C15F3C; --error:#D14343;
   --board-light:#EDF3FA; --board-dark:#5A99F2; --selected:#A4C6F6;
   --legal-dot:rgba(0,0,0,.55);
-  --halo:#1A1A1A;                       /* 마커 외곽 1dp 고리 — 두 칸 색 모두에 대비 확보 */
+  --candidate-marker:rgba(0,0,0,.5);    /* 후보 배지 테두리·숫자 (합법수 점과 같은 검정 오버레이 계열) */
   /* 승/무/패 막대 (9절 신규) */
   --wdl-white:#EDF3FA; --wdl-draw:#8A8178; --wdl-black:#3E3A36; --wdl-frame:#6D6459;
   /* 실측: 480px 화면, density 2.0 -> 240dp. 1dp = 2px */
@@ -106,19 +106,16 @@ h2 span{color:var(--page-mark);margin-right:10px}
 .pc{font-size:34px;line-height:1;position:relative;z-index:2}
 .pc.w{color:#fff;text-shadow:0 0 1px #111,0 1px 0 #111,1px 0 0 #111,-1px 0 0 #111,0 -1px 0 #111}
 .pc.b{color:#14161a;text-shadow:0 0 2px rgba(237,243,250,.45)}
-/* 후보 수 배지(사용자 요청: 인기 수는 원 안에 있는 숫자로) — 지름은 모두 같고
-   원 안의 숫자가 인기 순위(1=가장 많이 둔 수)를 나타낸다. 1dp 헤일로로 두 칸 색
-   모두에 대비를 확보한다. 21dp 칸에 들어가는 원에는 한 자리 숫자만 읽히므로
-   순위를 쓴다 — 정확한 비율은 목록에서 본다. */
+/* 후보 수 배지(사용자 요청: 인기 수는 원 안에 있는 숫자로, 배경 없이 검은색
+   테두리와 숫자만, 투명도 50%) — 지름은 모두 같고 원 안의 숫자가 인기 순위
+   (1=가장 많이 둔 수)를 나타낸다. 21dp 칸에 들어가는 원에는 한 자리 숫자만
+   읽히므로 순위를 쓴다 — 정확한 비율은 목록에서 본다.
+   채움이 없으니 배지 밑의 칸과 기물이 그대로 비친다. */
 .badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;
-  width:66%;height:66%;border-radius:50%;background:var(--accent);
-  box-shadow:0 0 0 2px var(--halo);
+  width:66%;height:66%;border-radius:50%;
+  border:2px solid var(--candidate-marker);color:var(--candidate-marker);
   display:flex;align-items:center;justify-content:center;
-  font-size:20px;font-weight:600;color:var(--text-primary);line-height:1}
-/* 후보 수가 기물을 잡는 경우: 배지가 그 기물을 가리므로, 칸에 내접하는 accent
-   고리로 "이 수는 따먹는 수"임을 따로 표시한다(퍼즐 화면의 따먹기 고리와 같은 문법) */
-.mkc::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  width:90%;height:90%;border-radius:50%;border:4px solid var(--accent);z-index:1}
+  font-size:20px;font-weight:600;line-height:1}
 /* 기물 선택 중 표시되는 합법수 점 (기존 퍼즐 화면과 동일) */
 .dot::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   width:30%;height:30%;border-radius:50%;background:var(--legal-dot);z-index:1}
@@ -218,7 +215,7 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
 </p>
 <div class="row">
   <figure class="face-wrap">
-    <figcaption class="cap"><b>기본 상태</b>인기 상위 5수의 도착 칸에 배지. 원 안의 숫자가 인기 순위다.</figcaption>
+    <figcaption class="cap"><b>기본 상태</b>인기 상위 5수의 도착 칸에 배지. 채움 없이 테두리와 숫자만, 원 안의 숫자가 인기 순위다.</figcaption>
     <div class="face">
       <div class="head">
         <div class="op-family">Ruy Lopez</div>
@@ -277,19 +274,24 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
     "480px 안"이 곧 "화면 안"이 아니다. 두 번 다 목업을 실제로 띄워 보고 발견했다.
   </li>
   <li data-k="마커">
-    <span class="val">accent #C15F3C</span> 원 안에 <b>인기 순위 숫자</b>(1=가장 많이 둔 수).
-    지름은 칸의 <span class="val">66%</span>로 다섯 개 모두 같고, 크기가 아니라 숫자가 순위를 말한다.
+    <span class="val">rgba(0,0,0,.5)</span> 테두리와 같은 색 숫자만 — <b>채움 없음</b>.
+    원 안의 숫자가 인기 순위(1=가장 많이 둔 수)이고, 지름은 칸의 <span class="val">66%</span>로 다섯 개 모두 같다.
     비율(%) 대신 순위를 쓰는 이유는 자릿수다 — 칸 한 변이 약 <span class="val">21dp</span>라
     원 안에 읽히는 크기(<span class="val">10sp</span>)로 들어가는 건 한 자리뿐이고,
     정확한 비율은 목록에서 바로 볼 수 있다.
-    accent는 밝은 칸에 3.77:1이지만 어두운 칸엔 1.46:1로 미달이라,
-    <span class="val">1dp #1A1A1A</span> 헤일로를 둘러 두 칸 색 모두에서 형태가 읽히게 했다.
-    도착 칸에 기물이 있으면(따먹는 수) 배지가 그 기물을 가리므로, 칸에 내접하는 accent 고리를
-    하나 더 둘러 "따먹는 수"임을 표시한다 — 퍼즐 화면의 따먹기 고리와 같은 문법이다.
+    검정 반투명은 이 보드가 이미 쓰는 오버레이 문법(합법수 점 <span class="val">rgba(0,0,0,.55)</span>)과 같은 계열이고,
+    합성 결과가 밝은 칸에 <span class="val">3.9:1</span>, 어두운 칸에 <span class="val">3.0:1</span>이라
+    도형 대비 기준 3:1을 두 칸 색 모두에서 넘긴다.
+    <br><b>이전 시안 대비</b>: accent 채움 + 헤일로였다가 사용자 요청으로 이 형태가 됐다.
+    배지가 더 이상 기물을 가리지 않으므로, 그것 때문에 두었던 <b>따먹기 표시용 accent 고리도 함께 없앴다</b> —
+    잡을 기물이 배지 너머로 그대로 보인다.
     <br><b>구현 중 확인</b>: 후보 두 수가 같은 칸에 도착하면(예: <span class="val">Nc3</span>와
     <span class="val">c3</span>) 더 인기 있는 쪽이 그 칸의 배지를 갖고 다른 쪽은 목록에만 남는다 —
     그래서 보드의 숫자가 <span class="val">1·2·4·5</span>처럼 건너뛸 수 있다.
     숫자는 언제나 목록의 순위 그대로여야 하므로 다시 매기지 않는다.
+    <br><b>남은 한계</b>: 도착 칸에 <b>검은 기물</b>이 있는 후보(예: <span class="val">Nxe5</span>)는
+    검정 반투명 숫자가 그 기물 위에 겹쳐 읽히지 않는다. 테두리는 칸 색 위로 나오는 부분이 있어 보이지만,
+    가운데 숫자는 묻힌다.
   </li>
   <li data-k="좌 탭">
     되돌리기. 되돌릴 수가 없으면 <span class="val">opacity .22</span>로 비활성 표시하고 탭을 받지 않는다.
@@ -492,6 +494,8 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
       <td>보드에 배지를 그릴 후보 수. 6위 이하는 목록에서만 본다.</td></tr>
     <tr><td><code>markerDigit</code></td><td><code>10sp / SemiBold</code></td>
       <td>배지 안의 순위 숫자. 배지 지름이 약 14dp라 한 자리가 읽히는 최대 크기.</td></tr>
+    <tr><td><code>MarkerBorderWidth</code></td><td><code>1dp</code></td>
+      <td>배지 테두리 두께. 배지는 테두리와 숫자가 전부다.</td></tr>
     <tr><td><code>wdlWhite</code></td><td><code>#EDF3FA</code></td><td>승/무/패 막대의 백승 구간. 밝은 칸 색과 같은 값을 재사용.</td></tr>
     <tr><td><code>wdlDraw</code></td><td><code>#8A8178</code></td><td>무승부 구간. 백승 구간과 3.2:1.</td></tr>
     <tr><td><code>wdlBlack</code></td><td><code>#3E3A36</code></td><td>흑승 구간. 무승부 구간과 3.13:1 — 순검정은 배경에 묻혀 못 쓴다.</td></tr>
@@ -560,10 +564,9 @@ document.querySelectorAll('.board').forEach(board => {
         el.textContent = GLYPH[piece.toLowerCase()];
         sq.appendChild(el);
       }
-      // 배지는 항상 같은 크기의 원 + 순위 숫자. 도착 칸에 기물이 있으면(따먹는 수)
-      // 배지가 그 기물을 가리므로 칸에 고리를 하나 더 두른다.
+      // 배지는 항상 같은 크기의 원 + 순위 숫자. 채움이 없으니 도착 칸에 기물이
+      // 있어도(따먹는 수) 그 기물이 배지 너머로 그대로 보인다.
       if (markers[name]) {
-        if (piece) sq.classList.add('mkc');
         const badge = document.createElement('span');
         badge.className = 'badge';
         badge.textContent = markers[name];

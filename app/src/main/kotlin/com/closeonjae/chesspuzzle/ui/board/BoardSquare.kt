@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.wear.compose.material3.Text
-import com.closeonjae.chesspuzzle.ui.theme.Accent
+import com.closeonjae.chesspuzzle.ui.theme.CandidateMarker
 import com.closeonjae.chesspuzzle.ui.theme.OpeningDimens
 import com.closeonjae.chesspuzzle.ui.theme.OpeningType
 import com.closeonjae.chesspuzzle.ui.theme.BoardDark
@@ -21,9 +21,7 @@ import com.closeonjae.chesspuzzle.ui.theme.BoardLight
 import com.closeonjae.chesspuzzle.ui.theme.HintTint
 import com.closeonjae.chesspuzzle.ui.theme.LastMoveTint
 import com.closeonjae.chesspuzzle.ui.theme.LegalDot
-import com.closeonjae.chesspuzzle.ui.theme.MarkerHalo
 import com.closeonjae.chesspuzzle.ui.theme.SelectedSquare
-import com.closeonjae.chesspuzzle.ui.theme.TextPrimary
 import com.github.bhlangonijr.chesslib.Piece
 import com.github.bhlangonijr.chesslib.Side
 
@@ -122,26 +120,6 @@ fun RowScope.BoardSquare(
                     }
                     null -> Modifier
                 },
-            )
-            .then(
-                // A candidate move that *captures*: the numbered badge below
-                // sits over the piece it would take, so this accent ring
-                // (inscribed in the square, same geometry as the legal-move
-                // capture ring above) is what says "this one takes something"
-                // without needing to see the piece underneath.
-                if (candidateRank != null && piece != Piece.NONE) {
-                    Modifier.drawWithContent {
-                        val ringWidth = size.minDimension * 0.1f
-                        drawCircle(
-                            color = Accent,
-                            radius = size.minDimension / 2f - ringWidth / 2f,
-                            style = Stroke(width = ringWidth),
-                        )
-                        drawContent()
-                    }
-                } else {
-                    Modifier
-                },
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -157,17 +135,17 @@ fun RowScope.BoardSquare(
             // A single rank digit rather than a percentage: a square is ~21dp
             // on the watch, so the badge circle can only hold one legible
             // digit — the exact share is one tap away in the move list.
-            // MarkerHalo is what makes it read on both square colors; accent
-            // alone is 3.77:1 on light squares but only 1.46:1 on dark ones
-            // (DESIGN.md 9.2절).
+            //
+            // Ring and digit only, nothing filled behind them (user request) —
+            // which is also why a capture no longer needs its own marking: the
+            // piece it would take is simply still visible through the badge.
             Box(
                 modifier = Modifier
                     .fillMaxSize(OpeningDimens.CandidateMarkerRatio)
-                    .background(Accent, CircleShape)
-                    .border(OpeningDimens.MarkerHaloWidth, MarkerHalo, CircleShape),
+                    .border(OpeningDimens.MarkerBorderWidth, CandidateMarker, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = candidateRank.toString(), style = OpeningType.markerDigit, color = TextPrimary)
+                Text(text = candidateRank.toString(), style = OpeningType.markerDigit, color = CandidateMarker)
             }
         }
     }
