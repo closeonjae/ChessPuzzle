@@ -1,18 +1,25 @@
 package com.closeonjae.chesspuzzle.ui.board
 
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.Typeface
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.wear.compose.material3.Text
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import com.closeonjae.chesspuzzle.ui.theme.CandidateMarker
 import com.closeonjae.chesspuzzle.ui.theme.OpeningDimens
 import com.closeonjae.chesspuzzle.ui.theme.OpeningType
@@ -131,22 +138,68 @@ fun RowScope.BoardSquare(
             )
         }
         if (candidateRank != null) {
-            // The popularity badge (user request: 인기 수는 원 안에 있는 숫자로).
-            // A single rank digit rather than a percentage: a square is ~21dp
-            // on the watch, so the badge circle can only hold one legible
-            // digit — the exact share is one tap away in the move list.
-            //
-            // Ring and digit only, nothing filled behind them (user request) —
-            // which is also why a capture no longer needs its own marking: the
-            // piece it would take is simply still visible through the badge.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize(OpeningDimens.CandidateMarkerRatio)
-                    .border(OpeningDimens.MarkerBorderWidth, CandidateMarker, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(text = candidateRank.toString(), style = OpeningType.markerDigit, color = CandidateMarker)
-            }
+            CandidateBadge(candidateRank)
         }
+    }
+}
+
+/**
+ * The popularity badge (user request: 인기 수는 원 안에 있는 숫자로) — a ring and a
+ * rank digit, nothing filled behind them (user request: 배경 없애고 검은색으로 원
+ * 테두리랑 숫자만, 투명도 50%). Because it is see-through, a candidate that
+ * captures needs no separate marking: the piece it would take stays visible.
+ *
+ * A single rank digit rather than a percentage: a square is ~21dp on the watch,
+ * so the circle only holds one legible digit — the exact share is one tap away
+ * in the move list.
+ *
+ * Ring and digit are drawn in **one pass off the same float centre**, which is
+ * what actually keeps the digit centred (user report: 숫자가 오른쪽으로 치우쳐
+ * 보임). Two earlier attempts missed the real cause, both confirmed by
+ * measuring an emulator screenshot:
+ *
+ *  1. Zeroing letter spacing, forcing tabular figures and centring the
+ *     paragraph across the full width changed nothing — none of them move the
+ *     ink inside the glyph's advance.
+ *  2. Centring the digit on its ink with `getTextBounds`, but as a child of a
+ *     `Box` that drew the ring with `Modifier.border`, still left up to ~1px:
+ *     the board's 8 columns don't divide evenly, so squares differ by a pixel,
+ *     and the ring's box and the digit's box were rounded *independently*.
+ *
+ * Drawing both from `DrawScope.center` removes that intermediate rounding
+ * entirely, and `getTextBounds` puts the ink — not the advance box, which a
+ * digit does not sit centred in — on that same point.
+ */
+@Composable
+private fun BoxScope.CandidateBadge(rank: Int) {
+    val density = LocalDensity.current
+    val fontSizePx = with(density) { OpeningType.markerDigit.fontSize.toPx() }
+    val strokePx = with(density) { OpeningDimens.MarkerBorderWidth.toPx() }
+    // The paint and the digit's ink bounds only depend on the text size and the
+    // digit, so neither is rebuilt on the board updates that redraw this.
+    val paint = remember(fontSizePx) {
+        Paint().apply {
+            isAntiAlias = true
+            color = CandidateMarker.toArgb()
+            textSize = fontSizePx
+            typeface = Typeface.create(Typeface.DEFAULT, FontWeight.SemiBold.weight, false)
+        }
+    }
+    val text = rank.toString()
+    val inkBounds = remember(text, paint) { Rect().also { paint.getTextBounds(text, 0, text.length, it) } }
+
+    Canvas(modifier = Modifier.matchParentSize()) {
+        val radius = size.minDimension * OpeningDimens.CandidateMarkerRatio / 2f
+        drawCircle(
+            color = CandidateMarker,
+            radius = radius - strokePx / 2f,
+            style = Stroke(width = strokePx),
+        )
+        drawContext.canvas.nativeCanvas.drawText(
+            text,
+            center.x - inkBounds.exactCenterX(),
+            center.y - inkBounds.exactCenterY(),
+            paint,
+        )
     }
 }
