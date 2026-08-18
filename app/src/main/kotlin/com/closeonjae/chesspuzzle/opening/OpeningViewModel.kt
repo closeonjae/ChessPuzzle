@@ -33,8 +33,8 @@ data class OpeningUiState(
     /** Legal destinations of [selectedSquare]'s piece, each mapped to whether landing there captures. */
     val legalDestinations: Map<Square, Boolean> = emptyMap(),
     val canUndo: Boolean = false,
-    /** Destination square → popularity rank (1 = most played), for the board badges. Empty while a piece is selected. */
-    val candidates: Map<Square, Int> = emptyMap(),
+    /** The top few candidate moves, for the board's badges and arrows. Empty while a piece is selected. */
+    val candidates: List<CandidateMove> = emptyList(),
     val opening: ExplorerOpening? = null,
     val white: Int = 0,
     val draws: Int = 0,
@@ -49,6 +49,13 @@ data class OpeningUiState(
 ) {
     val total: Long get() = white.toLong() + draws + black
 }
+
+/**
+ * One candidate move as the board draws it: an arrow from [from] to [to] with a
+ * numbered badge at [to]. [from] is what makes the move readable — the badge
+ * alone says a piece lands on f3, not *which* piece goes there.
+ */
+data class CandidateMove(val rank: Int, val from: Square, val to: Square)
 
 /**
  * Drives free exploration of an opening line: play a move (by tapping the
@@ -85,7 +92,7 @@ class OpeningViewModel(private val repository: OpeningRepository) : ViewModel() 
             // one of ours — so playing it here can never shadow picking a piece up.
             val candidateUci = state.moves.firstOrNull { it.destination() == square }?.uci
             when {
-                state.candidates.containsKey(square) && candidateUci != null -> playUci(candidateUci)
+                state.candidates.any { it.to == square } && candidateUci != null -> playUci(candidateUci)
                 line.isMovablePieceAt(square) -> select(square)
             }
             return
@@ -196,24 +203,30 @@ class OpeningViewModel(private val repository: OpeningRepository) : ViewModel() 
     }
 
     /**
-     * Destination square → rank for the top few moves. `moves` arrives sorted
-     * by popularity, so the index is the rank. Two moves can share a
-     * destination (two knights reaching the same square); the more popular one
-     * wins, since it got there first and `putIfAbsent` semantics apply.
+     * The top few moves as the board draws them. `moves` arrives sorted by
+     * popularity, so the index is the rank. Two moves can share a destination
+     * (two knights reaching the same square); the more popular one keeps it,
+     * and the other stays list-only — which is why the board's numbers can skip.
      */
-    private fun candidateRanks(moves: List<ExplorerMove>): Map<Square, Int> {
-        val ranks = LinkedHashMap<Square, Int>()
-        moves.take(OpeningDimens.CandidateMarkerLimit).forEachIndexed { index, move ->
-            move.destination()?.let { ranks.putIfAbsent(it, index + 1) }
+    private fun candidateRanks(moves: List<ExplorerMove>): List<CandidateMove> {
+        val taken = mutableSetOf<Square>()
+        return moves.take(OpeningDimens.CandidateMarkerLimit).mapIndexedNotNull { index, move ->
+            val from = move.origin() ?: return@mapIndexedNotNull null
+            val to = move.destination() ?: return@mapIndexedNotNull null
+            if (!taken.add(to)) return@mapIndexedNotNull null
+            CandidateMove(rank = index + 1, from = from, to = to)
         }
-        return ranks
     }
 }
 
 /**
- * The square a candidate move lands on. Taken from the UCI string's middle two
- * characters rather than by constructing a chesslib `Move`, so a promotion
- * ("e7e8q") reads the same as any other move.
+ * The squares a candidate move runs between. Read straight off the UCI string
+ * rather than by constructing a chesslib `Move`, so a promotion ("e7e8q") reads
+ * the same as any other move.
  */
-private fun ExplorerMove.destination(): Square? =
-    runCatching { Square.fromValue(uci.substring(2, 4).uppercase()) }.getOrNull()
+private fun ExplorerMove.origin(): Square? = squareAt(uci, 0)
+
+private fun ExplorerMove.destination(): Square? = squareAt(uci, 2)
+
+private fun squareAt(uci: String, index: Int): Square? =
+    runCatching { Square.fromValue(uci.substring(index, index + 2).uppercase()) }.getOrNull()

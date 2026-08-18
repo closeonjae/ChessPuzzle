@@ -36,6 +36,8 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,9 +58,11 @@ import com.closeonjae.chesspuzzle.ui.board.HalfMoonShape
 import com.closeonjae.chesspuzzle.ui.board.HintTabShape
 import com.closeonjae.chesspuzzle.ui.board.SideTab
 import com.closeonjae.chesspuzzle.ui.board.isLightSquare
+import com.closeonjae.chesspuzzle.ui.board.rowColOf
 import com.closeonjae.chesspuzzle.ui.board.squareAt
 import com.closeonjae.chesspuzzle.ui.theme.AppType
 import com.closeonjae.chesspuzzle.ui.theme.Background
+import com.closeonjae.chesspuzzle.ui.theme.CandidateMarker
 import com.closeonjae.chesspuzzle.ui.theme.Dimens
 import com.closeonjae.chesspuzzle.ui.theme.ErrorColor
 import com.closeonjae.chesspuzzle.ui.theme.OpeningDimens
@@ -72,6 +76,9 @@ import com.closeonjae.chesspuzzle.ui.theme.WdlFrame
 import com.closeonjae.chesspuzzle.ui.theme.WdlWhite
 import com.github.bhlangonijr.chesslib.Piece
 import com.github.bhlangonijr.chesslib.Square
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
 
 /** How far the previous position's numbers fade while the new position is being looked up (DESIGN.md 9.5절). */
 private const val STALE_ALPHA = 0.4f
@@ -306,12 +313,13 @@ private fun WdlBar(white: Int, draws: Int, black: Int, modifier: Modifier = Modi
 @Composable
 private fun OpeningBoard(state: OpeningUiState, boardSide: Dp, onSquareTapped: (Square) -> Unit) {
     val cellSizePx = with(LocalDensity.current) { boardSide.toPx() } / 8f
-    // Badges are hidden while a piece is selected: the selection's own legal-move
-    // dots are already on the board, and two systems of circles at once
-    // stops either being readable (DESIGN.md 9.4절).
-    val candidates = if (state.selectedSquare != null) emptyMap() else state.candidates
+    // Badges and arrows are hidden while a piece is selected: the selection's
+    // own legal-move dots are already on the board, and two systems of marks at
+    // once stops either being readable (DESIGN.md 9.4절).
+    val candidates = if (state.selectedSquare != null) emptyList() else state.candidates
+    val ranks = remember(candidates) { candidates.associate { it.to to it.rank } }
 
-    Column(
+    Box(
         modifier = Modifier
             .size(boardSide)
             .pointerInput(cellSizePx) {
@@ -322,25 +330,127 @@ private fun OpeningBoard(state: OpeningUiState, boardSide: Dp, onSquareTapped: (
                 }
             },
     ) {
-        for (row in 0 until 8) {
-            Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                for (col in 0 until 8) {
-                    val square = squareAt(row, col)
-                    val piece = state.pieces.getOrElse(square.ordinal) { Piece.NONE }
-                    BoardSquare(
-                        piece = piece,
-                        isLight = isLightSquare(row, col),
-                        isSelected = square == state.selectedSquare,
-                        isLastMove = square == state.lastMoveFrom || square == state.lastMoveTo,
-                        isHint = false,
-                        isCapture = state.legalDestinations[square],
-                        showPiece = piece != Piece.NONE,
-                        candidateRank = candidates[square],
-                    )
+        Column(modifier = Modifier.fillMaxSize()) {
+            for (row in 0 until 8) {
+                Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    for (col in 0 until 8) {
+                        val square = squareAt(row, col)
+                        val piece = state.pieces.getOrElse(square.ordinal) { Piece.NONE }
+                        BoardSquare(
+                            piece = piece,
+                            isLight = isLightSquare(row, col),
+                            isSelected = square == state.selectedSquare,
+                            isLastMove = square == state.lastMoveFrom || square == state.lastMoveTo,
+                            isHint = false,
+                            isCapture = state.legalDestinations[square],
+                            showPiece = piece != Piece.NONE,
+                            candidateRank = ranks[square],
+                        )
+                    }
                 }
             }
         }
+        CandidateArrows(candidates)
     }
+}
+
+/**
+ * An arrow per candidate move, drawn over the whole board rather than per
+ * square (user request) — a badge marks where a move *lands*, which does not
+ * say which piece goes there. Two knights can reach the same square, and a
+ * badge on f3 means nothing on a board until you can see it came from g1.
+ *
+ * Straight lines, including for knights: an L-shaped path is more literal but
+ * needs three times the ink on a board whose squares are about 21dp, and the
+ * pair of endpoints identifies the move either way.
+ *
+ * Same translucent black as the badges, so the whole candidate overlay reads as
+ * one layer sitting on the position rather than as part of it.
+ */
+@Composable
+private fun CandidateArrows(candidates: List<CandidateMove>) {
+    if (candidates.isEmpty()) return
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val cell = size.width / 8f
+        val headLength = cell * OpeningDimens.ArrowHeadLengthRatio
+        val headHalfWidth = cell * OpeningDimens.ArrowHeadWidthRatio / 2f
+        val badgeClearance = cell * (OpeningDimens.CandidateMarkerRatio / 2f + OpeningDimens.ArrowHeadGapRatio)
+        candidates.forEach { candidate ->
+            val start = centerOf(candidate.from, cell)
+            val end = centerOf(candidate.to, cell)
+            val span = end - start
+            val length = span.getDistance()
+            if (length < 1f) return@forEach
+            val dir = span / length
+            // Clear of the piece it starts on, and stopping short of the badge
+            // rather than under it — an arrow through the number would make
+            // both unreadable.
+            val tail = start + dir * (cell * OpeningDimens.ArrowTailInsetRatio)
+            val tip = end - dir * (cell * (OpeningDimens.CandidateMarkerRatio / 2f + OpeningDimens.ArrowHeadGapRatio))
+            if ((tip - tail).getDistance() < headLength) return@forEach
+            val base = tip - dir * headLength
+            // Draw the shaft in pieces, leaving a gap wherever it would run
+            // through *another* candidate's badge. Two moves from the same
+            // square along the same line (a pawn's one- and two-square push)
+            // are common, and without this the longer arrow strikes straight
+            // through the nearer badge's digit.
+            val shaftLength = (base - tail).getDistance()
+            val blocked = candidates
+                .filter { it.rank != candidate.rank }
+                .mapNotNull { other ->
+                    val toOther = centerOf(other.to, cell) - tail
+                    val along = toOther.x * dir.x + toOther.y * dir.y
+                    val across = (toOther - dir * along).getDistance()
+                    if (across >= badgeClearance) {
+                        null
+                    } else {
+                        val half = sqrt(badgeClearance * badgeClearance - across * across)
+                        (along - half) to (along + half)
+                    }
+                }
+                .sortedBy { it.first }
+            var cursor = 0f
+            for ((blockStart, blockEnd) in blocked) {
+                if (blockStart > cursor) {
+                    drawArrowShaft(tail, dir, cursor, min(blockStart, shaftLength), cell)
+                }
+                cursor = max(cursor, blockEnd)
+                if (cursor >= shaftLength) break
+            }
+            if (cursor < shaftLength) drawArrowShaft(tail, dir, cursor, shaftLength, cell)
+            val perpendicular = Offset(-dir.y, dir.x)
+            drawPath(
+                path = Path().apply {
+                    moveTo(tip.x, tip.y)
+                    lineTo(base.x + perpendicular.x * headHalfWidth, base.y + perpendicular.y * headHalfWidth)
+                    lineTo(base.x - perpendicular.x * headHalfWidth, base.y - perpendicular.y * headHalfWidth)
+                    close()
+                },
+                color = CandidateMarker,
+            )
+        }
+    }
+}
+
+/** One run of an arrow's shaft, between two distances along [dir] from [tail]. */
+private fun DrawScope.drawArrowShaft(tail: Offset, dir: Offset, from: Float, to: Float, cell: Float) {
+    // Anything shorter than the stroke is a dot, not a line — skip it rather
+    // than leave a speck floating between two badges.
+    val stroke = cell * OpeningDimens.ArrowStrokeRatio
+    if (to - from <= stroke) return
+    drawLine(
+        color = CandidateMarker,
+        start = tail + dir * from,
+        end = tail + dir * to,
+        strokeWidth = stroke,
+        cap = StrokeCap.Round,
+    )
+}
+
+/** Centre of [square] in board pixels. White is always at the bottom here, so there is no flip to apply. */
+private fun centerOf(square: Square, cell: Float): Offset {
+    val (row, col) = rowColOf(square)
+    return Offset((col + 0.5f) * cell, (row + 0.5f) * cell)
 }
 
 /**

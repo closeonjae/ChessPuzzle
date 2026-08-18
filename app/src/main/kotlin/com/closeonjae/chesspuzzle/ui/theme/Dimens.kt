@@ -44,6 +44,18 @@ object OpeningDimens {
     const val CandidateMarkerLimit = 5
     /** The candidate badge's ring. The badge is ring-and-digit only, so this is the whole of it. */
     val MarkerBorderWidth = 1.dp
+
+    // Candidate arrows. All fractions of a square, so they scale with the board.
+    /** Arrow line thickness. */
+    const val ArrowStrokeRatio = 0.07f
+    /** How far the arrow starts from its origin square's centre — clear of the piece standing there. */
+    const val ArrowTailInsetRatio = 0.34f
+    /** Gap between the arrow tip and the badge it points at. */
+    const val ArrowHeadGapRatio = 0.06f
+    /** Arrowhead length. */
+    const val ArrowHeadLengthRatio = 0.17f
+    /** Arrowhead width. */
+    const val ArrowHeadWidthRatio = 0.22f
     /** Win/draw/loss bar thickness. Thicker than the 3dp draft now that it is a long bar on its own rather than a chip's edge. */
     val WdlBarHeight = 4.dp
     /** Gap between the board's bottom edge and the bar (user request: 체스판에 가깝게). */
