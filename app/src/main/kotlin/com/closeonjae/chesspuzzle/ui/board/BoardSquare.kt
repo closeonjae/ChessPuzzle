@@ -1,7 +1,8 @@
 package com.closeonjae.chesspuzzle.ui.board
 
 import android.graphics.Paint
-import android.graphics.Rect
+import android.graphics.Path as AndroidPath
+import android.graphics.RectF
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -170,6 +171,20 @@ fun RowScope.BoardSquare(
  * entirely, and `getTextBounds` puts the ink — not the advance box, which a
  * digit does not sit centred in — on that same point.
  */
+/**
+ * Extra leftward nudge on the badge digit, as a fraction of its text size
+ * (user request, twice: 숫자가 아직 오른쪽으로 치우쳐 보인다).
+ *
+ * This is an *optical* adjustment, not a bug fix — the geometry underneath is
+ * already centred, first on the int ink box and then on the glyph outline's
+ * float bounds, and screenshots confirm both put the ink's midpoint on the
+ * ring's fitted centre. Digits simply don't read as centred when their ink box
+ * is: the weight of 1, 4 and 5 sits to the right of their own bounding box.
+ * Expressed against the text size so it scales with the badge rather than
+ * being a pixel constant that only holds at one density.
+ */
+private const val DIGIT_OPTICAL_SHIFT = 0.05f
+
 @Composable
 private fun BoxScope.CandidateBadge(rank: Int) {
     val density = LocalDensity.current
@@ -186,7 +201,18 @@ private fun BoxScope.CandidateBadge(rank: Int) {
         }
     }
     val text = rank.toString()
-    val inkBounds = remember(text, paint) { Rect().also { paint.getTextBounds(text, 0, text.length, it) } }
+    // Float ink bounds off the glyph outline, not `Paint.getTextBounds` — that
+    // one returns an **int** `Rect`, and its half-pixel quantisation is a
+    // visible slice of a badge only ~14dp across (user report: still leaning
+    // right after the int-bounds version).
+    val inkBounds = remember(text, paint) {
+        RectF().also { bounds ->
+            AndroidPath().let { outline ->
+                paint.getTextPath(text, 0, text.length, 0f, 0f, outline)
+                outline.computeBounds(bounds, true)
+            }
+        }
+    }
 
     Canvas(modifier = Modifier.matchParentSize()) {
         val radius = size.minDimension * OpeningDimens.CandidateMarkerRatio / 2f
@@ -197,8 +223,8 @@ private fun BoxScope.CandidateBadge(rank: Int) {
         )
         drawContext.canvas.nativeCanvas.drawText(
             text,
-            center.x - inkBounds.exactCenterX(),
-            center.y - inkBounds.exactCenterY(),
+            center.x - inkBounds.centerX() - fontSizePx * DIGIT_OPTICAL_SHIFT,
+            center.y - inkBounds.centerY(),
             paint,
         )
     }
