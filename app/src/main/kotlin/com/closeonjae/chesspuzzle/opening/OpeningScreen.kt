@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -203,42 +204,60 @@ private fun OpeningNameLabel(state: OpeningUiState, modifier: Modifier = Modifie
         modifier = modifier.alpha(if (state.isStale) STALE_ALPHA else 1f),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
+        AutoShrinkLine(
             text = family,
-            style = OpeningType.openingFamily,
+            base = OpeningType.openingFamily,
+            small = OpeningType.openingFamilySmall,
             color = color,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(OpeningDimens.NameWidthLine1),
+            widthFraction = OpeningDimens.NameWidthLine1,
         )
         if (variation != null) {
-            // Shrink once if it doesn't fit, then ellipsize (user choice).
-            // Keyed on the text so a new position starts at full size again
-            // rather than inheriting the previous name's shrink; a single step
-            // down means at most one extra layout pass.
-            var style by remember(variation) { mutableStateOf(OpeningType.openingVariation) }
-            Text(
+            AutoShrinkLine(
                 text = variation,
-                style = style,
+                base = OpeningType.openingVariation,
+                small = OpeningType.openingVariationSmall,
                 color = TextSecondary,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-                onTextLayout = { layout ->
-                    // hasVisualOverflow, not didOverflowWidth: once the line is
-                    // ellipsized it *fits* the constraint, so didOverflowWidth
-                    // reads false and the shrink never fired (measured — the
-                    // long name still truncated at 11sp's ~27 characters).
-                    if (layout.hasVisualOverflow && style == OpeningType.openingVariation) {
-                        style = OpeningType.openingVariationSmall
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(OpeningDimens.NameWidthLine2),
+                widthFraction = OpeningDimens.NameWidthLine2,
             )
         }
     }
+}
+
+/**
+ * One line of the opening name: full size if it fits, one step down if it
+ * doesn't, ellipsized only if it still doesn't (user choice).
+ *
+ * Both lines need this, not just the variation — line 1 sits *higher* on the
+ * round screen, where the chord is narrower still, and "King's Knight Opening"
+ * was already too long for it at full size (seen on the real watch).
+ *
+ * Keyed on the text so a new position starts at full size again instead of
+ * inheriting the previous name's shrink, and the step is a single one, so this
+ * costs at most one extra layout pass.
+ */
+@Composable
+private fun AutoShrinkLine(
+    text: String,
+    base: TextStyle,
+    small: TextStyle,
+    color: Color,
+    widthFraction: Float,
+) {
+    var style by remember(text, base) { mutableStateOf(base) }
+    Text(
+        text = text,
+        style = style,
+        color = color,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        // hasVisualOverflow, not didOverflowWidth: once a line is ellipsized it
+        // *fits* the constraint, so didOverflowWidth reads false and the shrink
+        // never fires — measured, the long name stayed cut off at 11sp.
+        onTextLayout = { layout -> if (layout.hasVisualOverflow && style == base) style = small },
+        modifier = Modifier.fillMaxWidth(widthFraction),
+    )
 }
 
 /**

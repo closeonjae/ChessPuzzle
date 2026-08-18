@@ -26,6 +26,13 @@ object OpeningType {
     // unspecified line height left that up to the platform font's metrics.
     /** Opening family, line 1 of the top label. */
     val openingFamily = TextStyle(fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold)
+
+    /**
+     * The family line when it doesn't fit. Line 1 sits higher than line 2,
+     * where the circle is narrower still — about 20 characters at 11sp, so even
+     * "King's Knight Opening" was cut off on the real watch.
+     */
+    val openingFamilySmall = openingFamily.copy(fontSize = 9.sp)
     /** Variation, line 2 of the top label. */
     val openingVariation = TextStyle(fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.Normal)
 
