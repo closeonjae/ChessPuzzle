@@ -48,6 +48,7 @@ import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.Text
 import com.closeonjae.chesspuzzle.R
 import com.closeonjae.chesspuzzle.core.lichess.ExplorerMove
+import com.closeonjae.chesspuzzle.core.lichess.formatGameCount
 import com.closeonjae.chesspuzzle.ui.board.BoardSquare
 import com.closeonjae.chesspuzzle.ui.board.HalfMoonShape
 import com.closeonjae.chesspuzzle.ui.board.HintTabShape
@@ -223,7 +224,7 @@ private fun EcoChip(state: OpeningUiState, modifier: Modifier = Modifier) {
     if (state.isLoading || state.isError) return
 
     val text = buildAnnotatedString {
-        if (state.total == 0) {
+        if (state.total == 0L) {
             append("No games")
             return@buildAnnotatedString
         }
@@ -264,14 +265,6 @@ private fun EcoChip(state: OpeningUiState, modifier: Modifier = Modifier) {
     }
 }
 
-/** Millions and thousands are abbreviated: the chip has room for four characters, not for 4,517,660. */
-private fun formatGameCount(total: Int): String = when {
-    total >= 1_000_000 -> "%.1fM".format(total / 1_000_000.0)
-    total >= 10_000 -> "${total / 1000}K"
-    total >= 1_000 -> "%.1fK".format(total / 1000.0)
-    else -> total.toString()
-}
-
 /**
  * Always ordered white wins | draws | black wins, left to right, matching
  * Lichess's own explorer so the reading carries over. The three colors are
@@ -284,7 +277,7 @@ private fun formatGameCount(total: Int): String = when {
  */
 @Composable
 private fun WdlBar(white: Int, draws: Int, black: Int, framed: Boolean, modifier: Modifier = Modifier) {
-    val total = (white + draws + black).coerceAtLeast(1)
+    val total = (white.toLong() + draws + black).coerceAtLeast(1L)
     Canvas(modifier = modifier) {
         val whiteWidth = size.width * white / total
         val drawWidth = size.width * draws / total
@@ -401,8 +394,8 @@ private fun MoveSheet(state: OpeningUiState, onPick: (ExplorerMove) -> Unit, onD
 }
 
 @Composable
-private fun MoveRow(move: ExplorerMove, positionTotal: Int, onPick: (ExplorerMove) -> Unit) {
-    val share = if (positionTotal > 0) move.total * 100 / positionTotal else 0
+private fun MoveRow(move: ExplorerMove, positionTotal: Long, onPick: (ExplorerMove) -> Unit) {
+    val share = if (positionTotal > 0) move.total * 100 / positionTotal else 0L
     Column(
         modifier = Modifier
             .fillMaxWidth(OpeningDimens.MoveListWidth)

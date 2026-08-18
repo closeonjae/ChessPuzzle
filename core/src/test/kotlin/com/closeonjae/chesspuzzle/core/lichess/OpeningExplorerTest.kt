@@ -56,7 +56,7 @@ class OpeningExplorerTest {
         assertEquals(5061745, response.white)
         assertEquals(492487, response.draws)
         assertEquals(4458129, response.black)
-        assertEquals(10012361, response.total)
+        assertEquals(10_012_361L, response.total)
         assertEquals(listOf("cxd5", "Nf6"), response.moves.map { it.san })
     }
 
@@ -68,7 +68,7 @@ class OpeningExplorerTest {
         // only on an exact dictionary hit (RESEARCH.md 11-B절).
         assertNull(moves[0].opening)
         assertEquals("D06", moves[1].opening?.eco)
-        assertEquals(4517660 + 450366 + 4016728, moves[0].total)
+        assertEquals(4_517_660L + 450_366 + 4_016_728, moves[0].total)
     }
 
     @Test
@@ -85,7 +85,39 @@ class OpeningExplorerTest {
         val response = json.decodeFromString<ExplorerResponse>(text)
         assertNull(response.opening)
         assertTrue(response.moves.isEmpty())
-        assertEquals(4, response.total)
+        assertEquals(4L, response.total)
+    }
+
+    @Test
+    fun `game counts in the billions abbreviate to B`() {
+        // Regression: the watch rendered "1927.8M" for the starting position,
+        // because the formatter stopped at millions. Real figure, read off the
+        // device against the signed-in account's own rating bands.
+        assertEquals("1.9B", formatGameCount(1_927_800_000L))
+        assertEquals("1.0B", formatGameCount(1_000_000_000L))
+        assertEquals("7.4B", formatGameCount(7_412_000_000L))
+    }
+
+    @Test
+    fun `game counts abbreviate by magnitude`() {
+        assertEquals("999", formatGameCount(999L))
+        assertEquals("1.0K", formatGameCount(1_000L))
+        assertEquals("9.9K", formatGameCount(9_900L))
+        assertEquals("12K", formatGameCount(12_345L))
+        assertEquals("999K", formatGameCount(999_999L))
+        assertEquals("1.2M", formatGameCount(1_200_000L))
+        assertEquals("4.8M", formatGameCount(4_800_000L))
+        assertEquals("23M", formatGameCount(23_700_000L))
+        assertEquals("0", formatGameCount(0L))
+    }
+
+    @Test
+    fun `totals are summed as Long so a busy position cannot wrap negative`() {
+        // 1.93 billion is already 90% of Int.MAX; three colours of a busier
+        // position would overflow an Int sum.
+        val response = ExplorerResponse(white = 900_000_000, draws = 127_800_000, black = 900_000_000)
+        assertEquals(1_927_800_000L, response.total)
+        assertTrue(response.total > Int.MAX_VALUE / 2)
     }
 
     @Test

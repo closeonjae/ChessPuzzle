@@ -47,7 +47,7 @@ data class OpeningUiState(
     val isError: Boolean = false,
     val isSheetOpen: Boolean = false,
 ) {
-    val total: Int get() = white + draws + black
+    val total: Long get() = white.toLong() + draws + black
 }
 
 /**

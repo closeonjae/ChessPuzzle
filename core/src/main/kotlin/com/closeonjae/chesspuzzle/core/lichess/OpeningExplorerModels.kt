@@ -37,7 +37,7 @@ data class ExplorerMove(
     val opening: ExplorerOpening? = null,
 ) {
     /** Games in the database that played this move — the popularity denominator's numerator. */
-    val total: Int get() = white + draws + black
+    val total: Long get() = white.toLong() + draws + black
 }
 
 /**
@@ -57,5 +57,28 @@ data class ExplorerResponse(
     val black: Int = 0,
     val moves: List<ExplorerMove> = emptyList(),
 ) {
-    val total: Int get() = white + draws + black
+    /**
+     * Long, not Int: the real watch reported **1,927,800,000** games for the
+     * starting position at one rating band pair — already 90% of `Int.MAX`, so
+     * summing the three colours as Int is one busier position away from
+     * wrapping negative.
+     */
+    val total: Long get() = white.toLong() + draws + black
+}
+
+/**
+ * Games counts for the ECO chip, which has room for about four characters —
+ * not for 1,927,800,000.
+ *
+ * The billions tier is not hypothetical: without it the watch rendered
+ * `1927.8M` for the starting position (seen on the device, not the emulator,
+ * whose fixture never got that large).
+ */
+fun formatGameCount(total: Long): String = when {
+    total >= 1_000_000_000 -> "%.1fB".format(total / 1_000_000_000.0)
+    total >= 10_000_000 -> "${total / 1_000_000}M"
+    total >= 1_000_000 -> "%.1fM".format(total / 1_000_000.0)
+    total >= 10_000 -> "${total / 1_000}K"
+    total >= 1_000 -> "%.1fK".format(total / 1_000.0)
+    else -> total.toString()
 }
