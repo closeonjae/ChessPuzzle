@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,17 +28,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,7 +48,6 @@ import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.Text
 import com.closeonjae.chesspuzzle.R
 import com.closeonjae.chesspuzzle.core.lichess.ExplorerMove
-import com.closeonjae.chesspuzzle.core.lichess.formatGameCount
 import com.closeonjae.chesspuzzle.ui.board.BoardSquare
 import com.closeonjae.chesspuzzle.ui.board.HalfMoonShape
 import com.closeonjae.chesspuzzle.ui.board.HintTabShape
@@ -98,11 +97,12 @@ fun OpeningScreen(viewModel: OpeningViewModel) {
 
     Box(modifier = Modifier.fillMaxSize().background(Background)) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val boardSide = minOf(maxWidth, maxHeight) * Dimens.BoardInsetRatio
+            val diameter = minOf(maxWidth, maxHeight)
+            val boardSide = diameter * Dimens.BoardInsetRatio
 
             OpeningNameLabel(
                 state = state,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 13.dp),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = OpeningDimens.NameTop),
             )
 
             Row(
@@ -141,10 +141,22 @@ fun OpeningScreen(viewModel: OpeningViewModel) {
                 }
             }
 
-            EcoChip(
-                state = state,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 11.dp),
-            )
+            // Just the win/draw/loss bar now, tucked under the board and as
+            // long as the round screen allows there (user request: ECO code and
+            // game count removed, bar moved close to the board and lengthened).
+            if (state.total > 0) {
+                WdlBar(
+                    white = state.white,
+                    draws = state.draws,
+                    black = state.black,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = diameter / 2 + boardSide / 2 + OpeningDimens.WdlBarGap)
+                        .alpha(if (state.isStale) STALE_ALPHA else 1f)
+                        .width(boardSide * OpeningDimens.WdlBarWidthRatio)
+                        .height(OpeningDimens.WdlBarHeight),
+                )
+            }
         }
 
         if (state.isSheetOpen) {
@@ -213,59 +225,6 @@ private fun OpeningNameLabel(state: OpeningUiState, modifier: Modifier = Modifie
 }
 
 /**
- * ECO code and how many games reached this position, with the win/draw/loss
- * split as the chip's own bottom edge. The bar is attached to the chip rather
- * than stacked under it because the bottom of a round screen runs out of chord
- * fast — stacked, it fell outside the display (found by rendering the mockup,
- * DESIGN.md 9.3절).
- */
-@Composable
-private fun EcoChip(state: OpeningUiState, modifier: Modifier = Modifier) {
-    if (state.isLoading || state.isError) return
-
-    val text = buildAnnotatedString {
-        if (state.total == 0L) {
-            append("No games")
-            return@buildAnnotatedString
-        }
-        state.opening?.let { opening ->
-            withStyle(SpanStyle(color = TextPrimary)) { append(opening.eco) }
-            append(" · ")
-        }
-        append(formatGameCount(state.total))
-    }
-
-    Column(
-        modifier = modifier
-            .alpha(if (state.isStale) STALE_ALPHA else 1f)
-            // IntrinsicSize.Max, not wrap-content: the bar below wants to be
-            // exactly as wide as the chip, but a plain `fillMaxWidth()` child
-            // resolves against the *incoming* constraint — the whole screen —
-            // and would drag the chip out to full width with it.
-            .width(IntrinsicSize.Max)
-            .clip(RoundedCornerShape(Dimens.ChipCornerRadius))
-            .background(Surface),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = text,
-            style = AppType.ratingChip,
-            color = TextSecondary,
-            modifier = Modifier.padding(horizontal = Dimens.ChipPaddingH, vertical = Dimens.ChipPaddingV),
-        )
-        if (state.total > 0) {
-            WdlBar(
-                white = state.white,
-                draws = state.draws,
-                black = state.black,
-                framed = false,
-                modifier = Modifier.fillMaxWidth().height(OpeningDimens.WdlBarHeight),
-            )
-        }
-    }
-}
-
-/**
  * Always ordered white wins | draws | black wins, left to right, matching
  * Lichess's own explorer so the reading carries over. The three colors are
  * picked for contrast *against each other* rather than for literal
@@ -274,24 +233,31 @@ private fun EcoChip(state: OpeningUiState, modifier: Modifier = Modifier) {
  *
  * Drawn rather than laid out as weighted children because a share can be
  * exactly zero, and `weight(0f)` is not allowed.
+ *
+ * The outline is not decoration: the black share is nearly the background's own
+ * color, so without it there is nothing to say where the bar ends and the
+ * black-wins segment would read as smaller than it is.
  */
 @Composable
-private fun WdlBar(white: Int, draws: Int, black: Int, framed: Boolean, modifier: Modifier = Modifier) {
+private fun WdlBar(white: Int, draws: Int, black: Int, modifier: Modifier = Modifier) {
     val total = (white.toLong() + draws + black).coerceAtLeast(1L)
     Canvas(modifier = modifier) {
+        val corner = CornerRadius(size.height / 2f)
+        val rounded = Path().apply {
+            addRoundRect(RoundRect(0f, 0f, size.width, size.height, corner))
+        }
         val whiteWidth = size.width * white / total
         val drawWidth = size.width * draws / total
-        drawRect(color = WdlWhite, size = Size(whiteWidth, size.height))
-        drawRect(color = WdlDraw, topLeft = Offset(whiteWidth, 0f), size = Size(drawWidth, size.height))
-        drawRect(
-            color = WdlBlack,
-            topLeft = Offset(whiteWidth + drawWidth, 0f),
-            size = Size(size.width - whiteWidth - drawWidth, size.height),
-        )
-        // Only a standalone bar needs this: the black share is nearly the
-        // background's own color, so without an outline there is nothing to
-        // say where the bar stops. On the chip, the chip itself says so.
-        if (framed) drawRect(color = WdlFrame, style = Stroke(width = 1.dp.toPx()))
+        clipPath(rounded) {
+            drawRect(color = WdlWhite, size = Size(whiteWidth, size.height))
+            drawRect(color = WdlDraw, topLeft = Offset(whiteWidth, 0f), size = Size(drawWidth, size.height))
+            drawRect(
+                color = WdlBlack,
+                topLeft = Offset(whiteWidth + drawWidth, 0f),
+                size = Size(size.width - whiteWidth - drawWidth, size.height),
+            )
+        }
+        drawRoundRect(color = WdlFrame, cornerRadius = corner, style = Stroke(width = 1.dp.toPx()))
     }
 }
 
@@ -416,7 +382,6 @@ private fun MoveRow(move: ExplorerMove, positionTotal: Long, onPick: (ExplorerMo
             white = move.white,
             draws = move.draws,
             black = move.black,
-            framed = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 4.dp)

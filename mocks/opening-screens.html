@@ -63,14 +63,15 @@ h2 span{color:var(--page-mark);margin-right:10px}
   box-shadow:0 0 0 1px var(--page-rule),0 18px 50px rgba(0,0,0,.45)}
 
 /* 상단: 오프닝 이름 (2줄 분리) — DESIGN.md 9절.
-   높이 84px + 보드 339.4px + 하단 56px = 479.4px < 480px. 세 블록의 합이
-   화면을 넘으면 flex가 넘쳐 하단 막대가 잘린다(첫 시안에서 실제로 잘렸음).
+   보드 위에 남는 원의 갓(cap)은 480px 화면에서 높이 70.3px뿐이다. 두 줄이
+   24px 줄높이로 48px, 시작 18px → 66px에서 끝나 보드(70.3px)와 닿지 않는다.
+   초안의 26px 시작은 둘째 줄을 보드 8px 아래로 밀어넣어 가려버렸다(사용자 리포트).
    각 줄의 폭은 그 y좌표에서의 원 현(chord) 길이에서 역산했다 — 아래 주석 참고. */
-.head{padding-top:26px;height:84px;width:100%;display:flex;flex-direction:column;
-  align-items:center;justify-content:flex-start;gap:2px;text-align:center}
-.op-family{font-size:22px;font-weight:600;line-height:1.2;color:var(--text-primary);
+.head{padding-top:18px;height:70.3px;width:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:flex-start;text-align:center}
+.op-family{font-size:22px;font-weight:600;line-height:24px;color:var(--text-primary);
   max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.op-var{font-size:22px;line-height:1.2;color:var(--text-secondary);
+.op-var{font-size:22px;line-height:24px;color:var(--text-secondary);
   max-width:58%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .head.empty .op-family{color:var(--text-secondary)}
 .head.fail .op-family{color:var(--error);max-width:58%}
@@ -78,20 +79,13 @@ h2 span{color:var(--page-mark);margin-right:10px}
 
 .mid{display:flex;align-items:center;gap:8px}
 
-/* 하단: ECO 칩 + 승/무/패 막대 */
-/* 하단은 42px만 쓴다 — 원의 아래쪽은 현이 급격히 짧아져, 사각형 기준으로 "들어간다"고
-   계산해도 실제로는 화면 밖이다. y=461px에서 현 너비가 185px이라 칩(약 150px)이 겨우 들어간다.
-   그래서 승/무/패 막대는 칩 아래 따로 두지 않고 칩의 아랫변에 붙였다. */
-.foot{height:42px;display:flex;flex-direction:column;align-items:center;padding-top:4px}
+/* 하단: 승/무/패 막대만 (사용자 요청 — ECO 코드와 대국 수는 없애고, 막대를
+   체스판에 가깝게 붙여 길게). 보드 아랫변(y=409.7)에서 6px 띄우면 막대 아랫변이
+   y≈423.7이고 그 높이의 현은 318px이라, 보드 폭(339.4px)의 93%까지가 안 잘린다. */
+.foot{height:70.3px;display:flex;flex-direction:column;align-items:center;padding-top:6px}
 .foot.pending{opacity:.4}
-.chip{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:9px;
-  background:var(--surface);border-radius:16px;padding:3px 20px 9px;line-height:1;
-  font-size:22px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
-.chip .eco{font-weight:600;color:var(--text-primary)}
-.chip .sep{color:#5A544C}
-.chip .wdl{position:absolute;left:0;right:0;bottom:0;width:auto;border-radius:0;outline:none}
-.wdl{width:176px;height:6px;display:flex;border-radius:3px;overflow:hidden;
-  outline:2px solid var(--wdl-frame)}
+.wdl{width:315.6px;height:8px;display:flex;overflow:hidden;box-sizing:border-box;
+  border:2px solid var(--wdl-frame);border-radius:4px}
 .wdl i{display:block;height:100%}
 .wdl .w{background:var(--wdl-white)} .wdl .d{background:var(--wdl-draw)} .wdl .b{background:var(--wdl-black)}
 
@@ -183,7 +177,7 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
     로딩·빈 상태·오류·긴 이름까지의 디자인 시안. 워치 면은 Galaxy Watch 8 실측
     <span class="val">480×480</span>(density 2.0, 1dp = 2px) 1:1 크기다.
     색·간격 토큰은 DESIGN.md 2~4절 값을 그대로 쓰고, 이 문서에서 새로 정하는 값은
-    승/무/패 막대와 후보 수 배지 두 가지뿐이다.
+    승/무/패 막대와 후보 수 배지, 그리고 그 둘이 원 안에 들어오게 하는 위치 값들이다.
   </p>
 </header>
 
@@ -227,9 +221,7 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
         <div class="tab right">≡</div>
       </div>
       <div class="foot">
-        <div class="chip"><span class="eco">C60</span><span class="sep">·</span><span>4.8M</span>
-          <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
-        </div>
+        <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
       </div>
     </div>
   </figure>
@@ -247,9 +239,7 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
         <div class="tab right">≡</div>
       </div>
       <div class="foot">
-        <div class="chip"><span class="eco">C60</span><span class="sep">·</span><span>4.8M</span>
-          <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
-        </div>
+        <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
       </div>
     </div>
   </figure>
@@ -267,11 +257,13 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
     y=54px에서는 <span class="val">303px</span>다. 그래서 1줄 <span class="val">42%</span>(200px),
     2줄 <span class="val">58%</span>(280px)로 제한했다 — 퍼즐 화면이 쓰는 78%를 그대로 가져오면
     첫 줄이 화면 밖으로 잘린다.
-    세로도 마찬가지다. 상단 <span class="val">84</span> + 보드 <span class="val">339.4</span> +
-    하단 <span class="val">42</span> = <span class="val">465.4px</span>.
-    첫 시안은 이 합이 493px이라 넘쳤고, 480px 안으로 줄인 두 번째 시안도
-    <b>사각형 기준으로만</b> 맞아서 막대가 여전히 안 보였다 — 원 바닥 근처는 현이 0에 가까워
-    "480px 안"이 곧 "화면 안"이 아니다. 두 번 다 목업을 실제로 띄워 보고 발견했다.
+    세로도 마찬가지다. 보드 위에 남는 갓(cap)은 <span class="val">70.3px</span>뿐이고,
+    두 줄이 24px 줄높이로 48px를 쓰므로 <span class="val">18px</span>에서 시작해야 딱 들어간다.
+    <br><b>실기에서 잡은 것</b>: 초안은 26px에서 시작해 둘째 줄이 보드 8px 아래로 들어가
+    <b>배리에이션 이름이 보드에 가려 안 보였다</b>(사용자 리포트, 실물 워치).
+    그 앞서 두 번은 하단이었다 — 첫 시안은 세 블록 합이 493px이라 넘쳤고,
+    480px 안으로 줄인 두 번째 시안도 <b>사각형 기준으로만</b> 맞아서 막대가 여전히 안 보였다.
+    원 근처에서는 "480px 안"이 곧 "화면 안"이 아니다.
   </li>
   <li data-k="마커">
     <span class="val">rgba(0,0,0,.5)</span> 테두리와 같은 색 숫자만 — <b>채움 없음</b>.
@@ -298,12 +290,15 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
     되돌리기는 캐시 히트라 네트워크 요청이 0회다(PLAN.md 9.3).
   </li>
   <li data-k="하단">
-    <span class="val">ECO 코드 · 이 국면의 총 대국 수</span> 칩. 승/무/패 막대는 칩 아래 따로 두지 않고
-    <b>칩의 아랫변</b>에 폭 전체로 붙인다 — 원의 아래쪽은 현이 급격히 짧아져
-    (y=<span class="val">470px</span>에서 현 너비 <span class="val">141px</span>)
-    칩과 막대를 세로로 쌓으면 막대가 화면 밖으로 나간다.
-    막대는 좌→우로 항상 백승·무·흑승 순(Lichess 탐색기 관례)이고, 폭이 곧 칩 폭이라 따로 외곽선이 필요 없다.
-    목록 오버레이에서는 세로 여유가 있어 행 폭 전체의 독립 막대로 둔다.
+    <b>승/무/패 막대만</b> 둔다 — ECO 코드와 대국 수는 뺐다(사용자 요청).
+    막대는 보드 아랫변에서 <span class="val">3dp</span>만 띄우고, 길이는 보드 폭의
+    <span class="val">93%</span>다. 1.0이 아닌 이유는 또 원이다 — 막대 아랫변이 놓이는
+    <span class="val">y≈424px</span>의 현은 <span class="val">318px</span>이라,
+    보드 폭(<span class="val">339px</span>) 그대로 그으면 양 끝이 잘린다.
+    좌→우로 항상 백승·무·흑승 순(Lichess 탐색기 관례)이고, 외곽선은 장식이 아니라
+    <b>흑승 구간이 배경과 거의 같은 색</b>이라 막대가 어디서 끝나는지를 책임진다.
+    <br><b>초안 대비</b>: 칩이 있었을 땐 막대를 칩 아랫변에 붙여 뒀는데, 칩이 없어지면서
+    보드 바로 아래라는 더 좋은 자리가 비었다 — 원의 폭도 그쪽이 훨씬 넉넉하다.
   </li>
 </ol>
 
@@ -396,15 +391,13 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
         <div class="tab right">≡</div>
       </div>
       <div class="foot pending">
-        <div class="chip"><span class="eco">C60</span><span class="sep">·</span><span>4.8M</span>
-          <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
-        </div>
+        <div class="wdl"><i class="w" style="width:49%"></i><i class="d" style="width:5%"></i><i class="b" style="width:46%"></i></div>
       </div>
     </div>
   </figure>
 
   <figure class="face-wrap">
-    <figcaption class="cap"><b>정석 밖(Out of book)</b>이름도 통계도 없는 국면. 되돌리기만 살아 있다.</figcaption>
+    <figcaption class="cap"><b>정석 밖(Out of book)</b>이름도 통계도 없는 국면. 막대도 사라지고 되돌리기만 살아 있다.</figcaption>
     <div class="face">
       <div class="head empty">
         <div class="op-family">Out of book</div>
@@ -415,45 +408,7 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
         <div class="tab right off">≡</div>
       </div>
       <div class="foot">
-        <div class="chip"><span>No games</span></div>
-      </div>
-    </div>
-  </figure>
-</div>
-
-<div class="row" style="margin-top:36px">
-  <figure class="face-wrap">
-    <figcaption class="cap"><b>연결 실패 · 429</b>보드 조작은 계속 되고, 우측 탭이 재시도로 바뀐다.</figcaption>
-    <div class="face">
-      <div class="head fail">
-        <div class="op-family">Connection lost</div>
-      </div>
-      <div class="mid">
-        <div class="tab left">↩</div>
-        <div class="board" data-fen="r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R"></div>
-        <div class="tab right retry">↻</div>
-      </div>
-      <div class="foot"></div>
-    </div>
-  </figure>
-
-  <figure class="face-wrap">
-    <figcaption class="cap"><b>긴 이름</b>계열/변화형을 나눠 두 줄에 담고, 넘치는 쪽만 말줄임한다.</figcaption>
-    <div class="face">
-      <div class="head">
-        <div class="op-family">Sicilian Defense</div>
-        <div class="op-var">Najdorf Variation, English Attack</div>
-      </div>
-      <div class="mid">
-        <div class="tab left">↩</div>
-        <div class="board" data-fen="rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N1B3/PPP2PPP/R2QKB1R"
-             data-markers="e5:1,g4:2,e6:3,b5:4,c6:5"></div>
-        <div class="tab right">≡</div>
-      </div>
-      <div class="foot">
-        <div class="chip"><span class="eco">B90</span><span class="sep">·</span><span>1.2M</span>
-          <div class="wdl"><i class="w" style="width:52%"></i><i class="d" style="width:4%"></i><i class="b" style="width:44%"></i></div>
-        </div>
+        <div class="wdl"><i class="w" style="width:52%"></i><i class="d" style="width:4%"></i><i class="b" style="width:44%"></i></div>
       </div>
     </div>
   </figure>
@@ -501,8 +456,14 @@ td code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13p
     <tr><td><code>wdlBlack</code></td><td><code>#3E3A36</code></td><td>흑승 구간. 무승부 구간과 3.13:1 — 순검정은 배경에 묻혀 못 쓴다.</td></tr>
     <tr><td><code>wdlFrame</code></td><td><code>#6D6459</code>, 1dp</td>
       <td>막대 외곽선. 흑승 구간이 검은 배경과 1.87:1이라, 막대가 어디서 끝나는지는 이 선이 책임진다(배경과 3.6:1).</td></tr>
-    <tr><td><code>WdlBarHeight</code></td><td><code>3dp</code></td>
-      <td>승/무/패 막대 두께. 폭은 하단에서는 칩 폭, 목록에서는 행 폭을 따른다.</td></tr>
+    <tr><td><code>WdlBarHeight</code></td><td><code>4dp</code></td>
+      <td>승/무/패 막대 두께. 칩의 아랫변이 아니라 독립된 긴 막대가 되면서 3dp에서 키웠다.</td></tr>
+    <tr><td><code>WdlBarWidthRatio</code></td><td><code>0.93</code></td>
+      <td>막대 길이(보드 폭 대비). 막대가 놓이는 높이의 현이 318px이라 보드 폭 그대로는 잘린다.</td></tr>
+    <tr><td><code>WdlBarGap</code></td><td><code>3dp</code></td>
+      <td>보드 아랫변과 막대 사이 간격.</td></tr>
+    <tr><td><code>NameTop</code></td><td><code>9dp</code></td>
+      <td>오프닝 이름 블록의 시작 y. 초안의 13dp는 둘째 줄을 보드 밑으로 밀어넣었다.</td></tr>
     <tr><td><code>OpeningNameWidth</code></td><td><code>0.42</code> / <code>0.58</code></td>
       <td>상단 이름 1줄 / 2줄의 폭(화면 대비). 각 줄 y좌표에서의 원 현 길이에서 역산 — 퍼즐 화면의 0.78은 여기서 잘린다.</td></tr>
     <tr><td><code>HeadHeight / FootHeight</code></td><td><code>42dp / 21dp</code></td>

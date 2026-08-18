@@ -21,10 +21,13 @@ object AppType {
 
 // DESIGN.md 9절 — opening explorer screens.
 object OpeningType {
+    // Both lines pin lineHeight rather than inheriting the font's own: the two
+    // of them have to fit inside the 70px cap above the board, and an
+    // unspecified line height left that up to the platform font's metrics.
     /** Opening family, line 1 of the top label. */
-    val openingFamily = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+    val openingFamily = TextStyle(fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold)
     /** Variation, line 2 of the top label. */
-    val openingVariation = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Normal)
+    val openingVariation = TextStyle(fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.Normal)
     /**
      * The rank digit inside a candidate-move badge. 10sp is the largest a
      * single digit can be inside a badge that fits a ~21dp square.

@@ -44,8 +44,25 @@ object OpeningDimens {
     const val CandidateMarkerLimit = 5
     /** The candidate badge's ring. The badge is ring-and-digit only, so this is the whole of it. */
     val MarkerBorderWidth = 1.dp
-    /** Win/draw/loss bar thickness. Its width follows whatever it is attached to. */
-    val WdlBarHeight = 3.dp
+    /** Win/draw/loss bar thickness. Thicker than the 3dp draft now that it is a long bar on its own rather than a chip's edge. */
+    val WdlBarHeight = 4.dp
+    /** Gap between the board's bottom edge and the bar (user request: 체스판에 가깝게). */
+    val WdlBarGap = 3.dp
+    /**
+     * Bar length, as a fraction of the board's side. Not 1.0: the bar sits
+     * *below* the board, where the circle has already narrowed. On a 480px
+     * screen the bar's lower edge is at y≈420, whose chord is 318px against the
+     * board's 339px — so a board-width bar would have its ends clipped off.
+     */
+    const val WdlBarWidthRatio = 0.93f
+    /**
+     * Top of the opening-name block. The cap above the board is only 70px tall
+     * on a 480px screen (the board starts at y=70.3), and two lines at 12sp
+     * line height need 48px — so the draft's 13dp (26px) pushed the second line
+     * 8px *under* the board, where it was hidden (user report). 9dp leaves the
+     * block ending at y=66.
+     */
+    val NameTop = 9.dp
     /** Candidate-list row width — fraction of screen width. */
     const val MoveListWidth = 0.68f
     /** Where the candidate list's first row starts. Its top two corners are the tightest point on this screen. */
